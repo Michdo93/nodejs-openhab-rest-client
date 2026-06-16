@@ -4,10 +4,10 @@
   "description": "JavaScript client for the openHAB REST API – same interface as python-openhab-rest-client",
   "author": "Michael Christian Dörflinger <michaeldoerflinger93@gmail.com>",
   "license": "MIT",
-  "homepage": "https://github.com/Michdo93/js-openhab-rest-client",
+  "homepage": "https://github.com/Michdo93/nodejs-openhab-rest-client",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Michdo93/js-openhab-rest-client.git"
+    "url": "https://github.com/Michdo93/nodejs-openhab-rest-client.git"
   },
   "keywords": [
     "openhab",
