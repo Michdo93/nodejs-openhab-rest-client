@@ -1,0 +1,47 @@
+{
+  "name": "nodejs-openhab-rest-client",
+  "version": "1.0.0",
+  "description": "JavaScript client for the openHAB REST API – same interface as python-openhab-rest-client",
+  "author": "Michael Christian Dörflinger <michaeldoerflinger93@gmail.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/Michdo93/js-openhab-rest-client",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Michdo93/js-openhab-rest-client.git"
+  },
+  "keywords": [
+    "openhab",
+    "smarthome",
+    "iot",
+    "rest",
+    "api",
+    "client",
+    "home-automation"
+  ],
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "types": "./dist/types/index.d.ts",
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "node build.js",
+    "test": "node test/test.js",
+    "test:sse": "node test/test-sse.js",
+    "test:cjs": "node test/test-cjs.cjs",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {},
+  "type": "module"
+}
