@@ -1,2725 +1,2019 @@
 # nodejs-openhab-rest-client
 
-A Node.js client for the openHAB REST API. This library enables easy interaction with the openHAB REST API to control smart home devices, retrieve status information, and process events — from Node.js scripts, servers, and CLI tools.
+A Node.js client for the openHAB REST API (openHAB 4 and 5) – for scripts, services, CLI tools and servers. No dependencies, ES module and CommonJS, TypeScript declarations included. For the browser there is a separate library, [js-openhab-rest-client](https://github.com/Michdo93/js-openhab-rest-client).
 
-It mirrors the [python-openhab-rest-client](https://github.com/Michdo93/python-openhab-rest-client) and [js-openhab-rest-client](https://github.com/Michdo93/js-openhab-rest-client) libraries: same class names, same method names, same usage pattern.
+It mirrors [python-openhab-rest-client](https://github.com/Michdo93/python-openhab-rest-client): **same classes, same methods, same parameters, same return values.** The REST classes are generated from the Python library (`tools/py2js.py`), so the Python, browser and Node.js libraries always behave the same – a script can be ported line by line.
 
 ## Features
 
-Supports the following openHAB REST API endpoints:
-
-- Actions
-- Addons
-- Audio
-- Auth
-- ChannelTypes
-- ConfigDescriptions
-- Discovery
-- Events (ItemEvents, ThingEvents, InboxEvents, LinkEvents, ChannelEvents)
-- Iconsets
-- Inbox
-- Items
-- Links
-- Logging
-- ModuleTypes
-- Persistence
-- ProfileTypes
-- Rules
-- Services
-- Sitemaps
-- Systeminfo
-- Tags
-- Templates
-- ThingTypes
-- Things
-- Transformations
-- UI
-- UUID
-- Voice
-
-All classes are also available as `Async` variants (e.g. `AsyncItems`, `AsyncThings`) using `AsyncOpenHABClient`. In JavaScript both are Promise-based and behave identically — the `Async` prefix is purely for naming consistency with the Python library.
-
-Supports both Server-Sent Events (SSE) and regular REST requests via the native Node.js 18+ `fetch` API. No external dependencies required.
+- All endpoints of the openHAB REST API: Actions, Addons, Audio, Auth, ChannelTypes, ConfigDescriptions, Discovery, Events (ItemEvents, ThingEvents, InboxEvents, LinkEvents, ChannelEvents), Iconsets, Inbox, Items, Links, Logging, ModuleTypes, Persistence, ProfileTypes, Rules, Services, Sitemaps, Systeminfo, Tags, Templates, ThingTypes, Things, Transformations, UI, UUID, Voice
+- Server-Sent Events with `for await … of iterSSEEvents(stream)` – payloads already decoded
+- Token and Basic authentication (also with umlauts in the password), myopenHAB
+- Errors as `{ error: "…" }` objects with openHAB's own explanation, exactly like the Python library
+- Timeouts, `#` in channel/action UIDs, form bodies, `source` for commands and updates
 
 ## Requirements
 
-- **Node.js 18.0.0 or higher** (for native `fetch` and `btoa`)
-- No external npm dependencies
+Node.js 18 or newer (native `fetch` and `ReadableStream`). No npm dependencies.
 
 ## Installation
 
-### Via npm (recommended)
+From GitHub:
+
+```sh
+npm install github:Michdo93/nodejs-openhab-rest-client
+```
+
+or, once published, from npm:
 
 ```sh
 npm install nodejs-openhab-rest-client
 ```
 
-### Via yarn
-
-```sh
-yarn add nodejs-openhab-rest-client
-```
-
-### Build from source
-
-Clone the repository and build the distribution files yourself:
-
-```sh
-git clone https://github.com/Michdo93/nodejs-openhab-rest-client.git
-cd nodejs-openhab-rest-client
-node build.js
-```
-
-This produces:
-- `dist/esm/index.js` — ES Module
-- `dist/cjs/index.js` — CommonJS
-- `dist/types/index.d.ts` — TypeScript declarations
-
----
-
-## Import
-
-The package supports both ES Modules and CommonJS.
-
-### ES Module (recommended)
-
-For projects with `"type": "module"` in `package.json` or `.mjs` files:
-
-```js
-import {
-  OpenHABClient,
-  Items,
-  Things,
-  Rules,
-  ItemEvents,
-} from "nodejs-openhab-rest-client";
-```
-
-### CommonJS
-
-For projects without `"type": "module"` in `package.json` or `.cjs` files:
-
-```js
-const {
-  OpenHABClient,
-  Items,
-  Things,
-  UUID,
-  Systeminfo,
-} = require("nodejs-openhab-rest-client");
-```
-
-### From a local build (dist path)
-
-If you built from source and want to import directly from the dist folder:
-
-```js
-// ESM
-import { OpenHABClient, Items } from "./dist/esm/index.js";
-
-// CommonJS
-const { OpenHABClient, Items } = require("./dist/cjs/index.js");
-```
-
-### TypeScript
-
-The package ships with TypeScript declarations at `dist/types/index.d.ts`. No additional `@types` package is needed:
-
-```ts
-import { OpenHABClient, Items } from "nodejs-openhab-rest-client";
-
-const client = new OpenHABClient("http://127.0.0.1:8080", "openhab", "habopen");
-const itemsAPI = new Items(client);
-const items = await itemsAPI.getItems();
-```
-
----
-
 ## Usage
 
-### Authentication
-
-#### Basic Authentication
-
 ```js
-import { OpenHABClient } from "nodejs-openhab-rest-client";
+import { OpenHABClient, Items, Rules } from "nodejs-openhab-rest-client";
+// CommonJS: const { OpenHABClient, Items, Rules } = require("nodejs-openhab-rest-client");
 
-const client = new OpenHABClient("http://127.0.0.1:8080", "openhab", "habopen");
+// Token (recommended) …
+const client = new OpenHABClient("http://openhab:8080", null, null, process.env.OPENHAB_TOKEN);
+// … or Basic authentication:  new OpenHABClient(url, "user", "password")
+// optional 5th parameter: timeout in seconds (default 10)
+
+await client.ready;                      // connection check, like the Python constructor
+console.log(client.isLoggedIn);
+
+const items = new Items(client);
+await items.sendCommand("Wohnzimmer_Licht", "ON", "my-service");     // source is optional
+await items.postUpdate("Werkstatt_Temperatur", "21.5 °C");
+console.log(await items.getItemState("Wohnzimmer_Licht"));           // "ON"
+
+const item = await items.getItem("Wohnzimmer_Temperatur", { parents: true });
+const lights = await items.getItems({ tags: "Light", fields: "name,state" });
+
+await new Rules(client).runNow("my-rule");
 ```
 
-#### Token-based Authentication
+Methods that have many optional parameters (`Items.getItems`, `Items.getItem`, `Persistence.getItemPersistenceData`, `Voice.startDialog`, `Voice.listenAndAnswer`, `Auth.getToken`) take them as one object – that is the JavaScript counterpart to Python's keyword arguments. All other methods take positional parameters in the same order as in Python.
+
+Keep the token out of the source code – read it from an environment variable or a file that is not checked in.
+
+### Return values and errors
+
+| openHAB answers | Python | JavaScript |
+|---|---|---|
+| JSON | `dict` / `list` | object / array |
+| Text (e.g. an item state) | `str` | string |
+| Empty body (200, 201, 202) | `{"message": "OK"}` etc. | `{ message: "OK" }` etc. |
+| Error (4xx/5xx, network) | `{"error": "Item not found."}` | `{ error: "Item not found." }` |
+
+The REST classes never throw for HTTP or network errors – check for `error`:
 
 ```js
-const client = new OpenHABClient(
-  "http://127.0.0.1:8080",
-  null,
-  null,
-  "oh.openhab.U0doM1Lz4kJ6tPlVGjH17jjm4ZcTHIHi7sMwESzrIybKbCGySmBMtysPnObQLuLf7PgqnI7jWQ5LosySY8Q"
-);
+const result = await items.sendCommand("Wohnzimmer_Dimmer", "BLAU");
+if (result.error) console.error(result.error);    // "Invalid command for this item."
 ```
 
-#### myopenhab.org Cloud
+The low-level methods `client.get/post/put/delete/executeSSE` throw an `OpenHABHTTPError` (with `status`, `url` and `openhabMessage`) so that you can handle every status code yourself.
+
+### Server-Sent Events
+
+Every event method resolves to a stream (a fetch `Response`) or to `{ error }`. `iterSSEEvents` turns it into events with an already decoded payload; leaving the loop closes the stream.
 
 ```js
-const client = new OpenHABClient("https://myopenhab.org", "your@email.com", "yourpassword");
-```
-
-### Verifying Connectivity
-
-Call `login()` to verify the connection before making requests. It sets `client.isLoggedIn` and `client.isCloud`:
-
-```js
-await client.login();
-
-if (!client.isLoggedIn) {
-  console.error("Connection failed.");
-  process.exit(1);
-}
-console.log("Connected to openHAB");
-```
-
-### Normal REST Requests
-
-All methods return `Promise`s. Use `await` in an async context:
-
-```js
-import { OpenHABClient, Items } from "nodejs-openhab-rest-client";
-
-const client = new OpenHABClient("http://127.0.0.1:8080", "openhab", "habopen");
-await client.login();
-
-const itemsAPI = new Items(client);
-const allItems = await itemsAPI.getItems();
-console.log(allItems);
-
-await itemsAPI.sendCommand("MyLightSwitch", "ON");
-```
-
-### Async Variants
-
-The `Async` prefixed classes (`AsyncItems`, `AsyncThings`, etc.) behave identically to the base classes in JavaScript. They exist for naming consistency with the Python library:
-
-```js
-import { AsyncOpenHABClient, AsyncItems } from "nodejs-openhab-rest-client";
-
-const client = new AsyncOpenHABClient("http://127.0.0.1:8080", "openhab", "habopen");
-const asyncItems = new AsyncItems(client);
-
-const items = await asyncItems.getItems();
-console.log(items);
-```
-
-### Server-Sent Events (SSE)
-
-SSE streams are returned as a `Promise<Response>`. Use the native `ReadableStream` API to consume them:
-
-```js
-import { OpenHABClient, ItemEvents, Items } from "nodejs-openhab-rest-client";
-
-const client     = new OpenHABClient("http://127.0.0.1:8080", "openhab", "habopen");
-const itemEvents = new ItemEvents(client);
-const itemsAPI   = new Items(client);
-
-await client.login();
-
-// Open SSE stream
-const response = await itemEvents.ItemStateChangedEvent("MyLightSwitch");
-
-if (!response.ok) {
-  console.error(`SSE error: HTTP ${response.status}`);
-  process.exit(1);
+const stream = await new ItemEvents(client).ItemStateChangedEvent("Wohnzimmer_Licht");
+for await (const event of iterSSEEvents(stream)) {
+  console.log(event.topic, event.payload.value, "was", event.payload.oldValue);
 }
 
-const reader  = response.body.getReader();
-const decoder = new TextDecoder();
-let   buffer  = "";
+// several topics at once
+const all = await new Events(client).getEvents(
+  "openhab/items/*/statechanged,openhab/things/*/statuschanged");
 
-while (true) {
-  const { done, value } = await reader.read();
-  if (done) break;
+// stop a stream from outside (e.g. on SIGINT)
+stream.abort();
+```
 
-  buffer += decoder.decode(value, { stream: true });
-  const lines = buffer.split("\n");
-  buffer = lines.pop(); // keep incomplete last chunk
+`iterSSEEvents(stream, true)` also yields ALIVE messages and events without a topic (sitemap events). For the state tracker read lines with `iterSSELines` – its first `data:` line is the connection id:
 
-  for (const line of lines) {
-    if (!line.startsWith("data: ")) continue;
-    const raw = line.slice(6).trim();
-    if (!raw) continue;
-
-    try {
-      const event = JSON.parse(raw);
-      console.log("Event:", event.type);
-      if (event.payload) {
-        const payload = JSON.parse(event.payload);
-        console.log("  value:", payload.value);
-      }
-    } catch {}
-  }
+```js
+const events = new Events(client);
+const tracker = await events.initiateStateTracker();
+let id = null;
+for await (const line of iterSSELines(tracker)) {
+  if (!line.startsWith("data:")) continue;
+  if (!id) { id = line.slice(5).trim(); await events.updateSSEConnectionItems(id, ["Wohnzimmer_Licht"]); continue; }
+  console.log(JSON.parse(line.slice(5)));   // { Wohnzimmer_Licht: { state, displayState, type } }
 }
 ```
 
-### Running the Tests
+### Async variants
 
-The package includes three test files that can be run against a local openHAB instance. Edit the connection settings inside each file first:
+`AsyncOpenHABClient`, `AsyncItems`, `AsyncThings`, … are aliases of the normal classes – in JavaScript every method already returns a Promise. They exist so that code from the Python library's async variant can be ported unchanged.
 
-```sh
-# REST API test (all classes)
-node test/test.js
+## JavaScript vs. Python
 
-# SSE streaming test (listens 10 seconds, sends commands to trigger events)
-node test/test-sse.js
+| Topic | Python | JavaScript |
+|---|---|---|
+| Call | `items.getItems()` | `await items.getItems()` |
+| Keyword arguments | `getItem("X", parents=True)` | `getItem("X", { parents: true })` |
+| Event stream | `for e in iterSSEEvents(stream):` | `for await (const e of iterSSEEvents(stream))` |
+| Close stream | `stream.close()` | `stream.abort()` or `break` |
+| Connection check | in the constructor | `await client.ready` |
+| TLS with self-signed certificate | `verify="ca.pem"` | trust the certificate in the browser / operating system |
+| Install | `pip install python-openhab-rest-client` | `<script src="…/openhab.min.js">` |
 
-# CommonJS compatibility test
-node test/test-cjs.cjs
+## CORS
+
+A page that is not served by openHAB itself (e.g. `file://` or another host) needs CORS to be enabled in openHAB: *Settings → API Security → Enable CORS* (or `org.openhab.cors:enable=true`). Pages in `$OPENHAB_CONF/html` are served by openHAB under `/static/` and need no CORS.
+
+## Test page
+
+`index.html` is an interactive test page for all classes: open it in the browser, enter URL and token (or user and password) and run the methods one by one or section by section.
+
+## Upgrading from 1.x
+
+Version 2 behaves like the Python library. Code written for 1.x needs these changes:
+
+- Methods no longer throw for HTTP errors – they return `{ error: "…" }`. Replace `try/catch` around REST calls by a check of `result.error`.
+- Empty answers are `{ message: "OK" }` (or `"Accepted."`, `"Subscription created."`, …) instead of `{ status: 200 }`.
+- Create calls (`createRule`, `createThing`, `addUIComponent`, …) return a result object instead of a raw `Response`.
+- Event methods return the stream or `{ error }`; read it with `iterSSEEvents` instead of a hand-written reader.
+- `getItemPersistenceData` no longer pages by default (1.x always sent `page=1&pagelength=50` and therefore skipped the first 50 values).
+
+## Development
+
+The REST classes are generated from python-openhab-rest-client. Fix behaviour in the Python library and regenerate – only Python is needed:
+
+```bash
+pip install python-openhab-rest-client rjsmin   # or pass the path of a checkout
+bash tools/build.sh [path/to/python-openhab-rest-client/openhab]
 ```
+
+`tools/core_head.js` (client, errors, SSE helpers) is written by hand, `tools/py2js.py` translates the classes and the reference below. The translator refuses Python constructs it does not know, so nothing is translated silently wrong.
 
 ---
 
-## Full List of Methods
-
----
+## Reference
 
 ### OpenHABClient
 
-`OpenHABClient` is the base client class that handles authentication and HTTP communication with the openHAB REST API. All API classes receive an `OpenHABClient` instance in their constructor.
-
-All methods return **Promises**.
-
-#### Constructor
-
 ```js
-new OpenHABClient(url, username = null, password = null, token = null)
+const client = new OpenHABClient(url, username = null, password = null, token = null, timeout = 10);
 ```
 
-**Parameters:**
-- `url` (string): The base URL of the openHAB server (e.g. `"http://127.0.0.1:8080"`).
-- `username` (string, optional): Username for Basic Authentication.
-- `password` (string, optional): Password for Basic Authentication.
-- `token` (string, optional): Bearer Token for Token-based Authentication.
+| Member | Description |
+|---|---|
+| `ready` | Promise that resolves to the client after the connection check (never rejects) |
+| `login()` | Repeats the connection check; sets `isLoggedIn` and `isCloud` |
+| `get(endpoint, headers, params)` | GET; resolves to JSON, text or a `StatusResponse` (`{ status, location }`); throws `OpenHABHTTPError` |
+| `post/put/delete(endpoint, headers, data, params)` | Same for the other methods. A string body without `Content-Type` is sent as JSON or text/plain, an object as JSON (or as form with `application/x-www-form-urlencoded`) |
+| `executeSSE(url, headers, params)` | Opens an event stream (fetch `Response` with an extra `abort()`) |
+| `close()` | No-op, for symmetry with Python |
 
-**Example:**
+Endpoints may be given with or without `/rest` (`"/items"`, `"items"`, `"/rest/items"`).
 
-```js
-const client = new OpenHABClient("http://127.0.0.1:8080", "admin", "password");
-```
+### SSE helpers
 
-#### Properties
-
-| Property | Type | Description |
-|---|---|---|
-| `url` | string | Base URL of the openHAB server |
-| `username` | string\|null | Username (Basic Auth) |
-| `password` | string\|null | Password (Basic Auth) |
-| `token` | string\|null | Bearer token |
-| `isCloud` | boolean | `true` when connected to `myopenhab.org` |
-| `isLoggedIn` | boolean | `true` after a successful `login()` call |
-
-#### Methods
-
-##### `login()`
-
-Verifies connectivity to the openHAB server. Sets `isLoggedIn` and `isCloud`.
-
-**Returns:** `Promise<this>` — returns itself for chaining.
-
-```js
-await client.login();
-console.log(client.isLoggedIn); // true
-```
-
-##### `get(endpoint, headers = {}, params = null)`
-
-Sends a GET request.
-
-**Parameters:**
-- `endpoint` (string): The API endpoint (e.g. `"/items"`).
-- `headers` (object, optional): Additional request headers.
-- `params` (object|null, optional): Query parameters — `null` values are filtered out automatically.
-
-**Returns:** `Promise<unknown>` — parsed JSON, plain text, or `{ status }` for empty responses.
-
-##### `post(endpoint, headers = {}, data = null, params = null)`
-
-Sends a POST request.
-
-**Parameters:**
-- `endpoint` (string): The API endpoint.
-- `headers` (object, optional): Additional headers.
-- `data` (unknown, optional): Request body (string, object, or null).
-- `params` (object|null, optional): Query parameters.
-
-**Returns:** `Promise<unknown>`.
-
-##### `put(endpoint, headers = {}, data = null, params = null)`
-
-Sends a PUT request. Parameters identical to `post`.
-
-**Returns:** `Promise<unknown>`.
-
-##### `delete(endpoint, headers = {}, data = null, params = null)`
-
-Sends a DELETE request. Parameters identical to `post`.
-
-**Returns:** `Promise<unknown>`.
-
-##### `_executeSSE(url, headers = {})`
-
-Opens a Server-Sent Events stream. Used internally by all event classes.
-
-**Parameters:**
-- `url` (string): The full SSE URL.
-- `headers` (object, optional): Additional headers.
-
-**Returns:** `Promise<Response>` — the raw fetch Response; iterate `response.body` with a `ReadableStream` reader.
-
----
-
-### AsyncOpenHABClient
-
-`AsyncOpenHABClient` extends `OpenHABClient` with an explicit async name for consistency with the Python library. It is functionally identical.
-
-```js
-import { AsyncOpenHABClient, AsyncItems } from "nodejs-openhab-rest-client";
-
-const client = new AsyncOpenHABClient("http://127.0.0.1:8080", "openhab", "habopen");
-const asyncItems = new AsyncItems(client);
-const items = await asyncItems.getItems();
-```
-
----
+| Function | Description |
+|---|---|
+| `iterSSEEvents(stream, includeAlive = false)` | Async generator: events as objects, payload decoded |
+| `iterSSELines(stream)` | Async generator: raw lines, each as soon as it is complete |
+| `parseSSEData(line)` | Decodes one `data:` line or returns `null` |
+| `aiterSSEEvents`, `aiterSSELines` | Aliases (names of the Python async variants) |
 
 ### Actions
 
-Provides methods to retrieve and execute thing actions.
-
-#### Constructor
-
 ```js
-import { OpenHABClient, Actions } from "nodejs-openhab-rest-client";
-
-const client  = new OpenHABClient("http://127.0.0.1:8080", "openhab", "habopen");
-const actions = new Actions(client);
+const actions = new Actions(client);   // or new AsyncActions(client)
 ```
 
-#### Methods
+#### `getActions(thingUID, language = null)`
 
-##### `getActions(thingUID, language = null)`
+Get all available actions for provided thing UID.
 
-Gets all available actions for a thing.
+- `thingUID` – The UID of the thing for which actions are to be retrieved.
+- `language` – (Optional) Language setting for the Accept-Language headers.
 
-**Parameters:**
-- `thingUID` (string): The UID of the thing.
-- `language` (string, optional): Language for the `Accept-Language` header.
+**Returns:** A list of actions.
 
-**Returns:** `Promise<unknown>` — list of available actions.
+#### `executeAction(thingUID, actionUID, actionInputs, language = null)`
 
-```js
-const list = await actions.getActions("zwave:device:controller:node5");
-```
+Executes a thing action.
 
-##### `executeAction(thingUID, actionUID, actionInputs, language = null)`
+- `thingUID` – The UID of the thing on which the action is to be executed.
+- `actionUID` – The UID of the action to be executed.
+- `actionInputs` – The inputs for the action as a object.
+- `language` – (Optional) Language setting for the Accept-Language headers.
 
-Executes a specific action on a thing.
-
-**Parameters:**
-- `thingUID` (string): The UID of the thing.
-- `actionUID` (string): The UID of the action.
-- `actionInputs` (object): Input parameters for the action.
-- `language` (string, optional): Language for the response.
-
-**Returns:** `Promise<unknown>`.
-
-```js
-await actions.executeAction("myThingUID", "myActionUID", { param1: "value1" });
-```
-
-Also available as `AsyncActions`.
+**Returns:** A response from the server.
 
 ---
 
 ### Addons
 
-Provides methods to manage openHAB add-ons.
-
-#### Constructor
-
 ```js
-const addons = new Addons(client);
+const addons = new Addons(client);   // or new AsyncAddons(client)
 ```
 
-#### Methods
+#### `getAddons(serviceID = null, language = null)`
 
-##### `getAddons(serviceID = null, language = null)`
+Retrieves a list of all available add-ons.
 
-Gets all available add-ons.
+- `serviceID` – Optional service ID to filter the results.
+- `language` – Optional language preference for the response.
 
-**Parameters:**
-- `serviceID` (string, optional): Filter by service ID.
-- `language` (string, optional): Language for the response.
+**Returns:** A object containing the add-ons data.
 
-**Returns:** `Promise<unknown>`.
+#### `getAddon(addonID, serviceID = null, language = null)`
 
-##### `getAddon(addonID, serviceID = null, language = null)`
+Retrieves details of a specific add-on by its ID.
 
-Gets a specific add-on by ID.
+- `addonID` – The unique identifier of the add-on.
+- `serviceID` – Optional service ID to filter the results.
+- `language` – Optional language preference for the response.
 
-**Parameters:**
-- `addonID` (string): The unique identifier of the add-on.
-- `serviceID` (string, optional): Filter by service ID.
-- `language` (string, optional): Language for the response.
+**Returns:** A object containing details of the specified add-on.
 
-**Returns:** `Promise<unknown>`.
+#### `getAddonConfig(addonID, serviceID = null)`
 
-##### `getAddonConfig(addonID, serviceID = null)`
+Retrieves the configuration of a specific add-on.
 
-Gets the configuration of a specific add-on.
+- `addonID` – The unique identifier of the add-on.
+- `serviceID` – Optional service ID to filter the results.
 
-**Parameters:**
-- `addonID` (string): The add-on identifier.
-- `serviceID` (string, optional): Filter by service ID.
+**Returns:** A object containing the configuration of the specified add-on.
 
-**Returns:** `Promise<unknown>`.
+#### `updateAddonConfig(addonID, configData, serviceID = null)`
 
-##### `updateAddonConfig(addonID, configData, serviceID = null)`
+Updates the configuration of a specific add-on and returns the updated configuration.
 
-Updates the configuration of a specific add-on.
+- `addonID` – The unique identifier of the add-on.
+- `configData` – A object containing the new configuration settings.
+- `serviceID` – Optional service ID to specify the target service.
 
-**Parameters:**
-- `addonID` (string): The add-on identifier.
-- `configData` (object): New configuration settings.
-- `serviceID` (string, optional): Filter by service ID.
+**Returns:** A object containing the updated configuration.
 
-**Returns:** `Promise<unknown>`.
-
-##### `installAddon(addonID, serviceID = null)`
+#### `installAddon(addonID, serviceID = null)`
 
 Installs an add-on by its ID.
 
-**Parameters:**
-- `addonID` (string): The add-on identifier.
-- `serviceID` (string, optional): Filter by service ID.
+- `addonID` – The unique identifier of the add-on.
+- `serviceID` – Optional service ID to specify the target service.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** A object containing the installation status.
 
-##### `uninstallAddon(addonID, serviceID = null)`
+#### `uninstallAddon(addonID, serviceID = null)`
 
 Uninstalls an add-on by its ID.
 
-**Parameters:**
-- `addonID` (string): The add-on identifier.
-- `serviceID` (string, optional): Filter by service ID.
+- `addonID` – The unique identifier of the add-on.
+- `serviceID` – Optional service ID to specify the target service.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** A object containing the uninstallation status.
 
-##### `getAddonServices(language = null)`
+#### `getAddonServices(language = null)`
 
-Gets all available add-on services.
+Retrieves a list of all available add-on services.
 
-**Parameters:**
-- `language` (string, optional): Language for the response.
+- `language` – Optional language preference for the response.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** A object containing the available add-on services.
 
-##### `getAddonSuggestions(language = null)`
+#### `getAddonSuggestions(language = null)`
 
-Gets suggested add-ons for installation.
+Retrieves a list of suggested add-ons for installation.
 
-**Parameters:**
-- `language` (string, optional): Language for the response.
+- `language` – Optional language preference for the response.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** A object containing suggested add-ons.
 
-##### `getAddonTypes(serviceID = null, language = null)`
+#### `getAddonTypes(serviceID = null, language = null)`
 
-Gets all available add-on types.
+Retrieves a list of all available add-on types.
 
-**Parameters:**
-- `serviceID` (string, optional): Filter by service ID.
-- `language` (string, optional): Language for the response.
+- `language` – Optional language preference for the response.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** A object containing available add-on types.
 
-##### `installAddonFromUrl(url)`
+#### `installAddonFromUrl(url)`
 
-Installs an add-on from a URL.
+Installs an add-on from a given URL.
 
-**Parameters:**
-- `url` (string): The URL of the add-on to install.
+- `url` – The URL of the add-on to install.
 
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncAddons`.
+**Returns:** A object containing the installation status.
 
 ---
 
 ### Audio
 
-Provides methods to interact with the openHAB audio system.
-
-#### Constructor
-
 ```js
-const audio = new Audio(client);
+const audio = new Audio(client);   // or new AsyncAudio(client)
 ```
 
-#### Methods
+#### `getDefaultSink(language = null)`
 
-##### `getDefaultSink(language = null)`
+Retrieves the default sink if defined, or the first available sink.
 
-Gets the default audio sink.
+- `language` – (Optional) Language setting for the Accept-Language header.
 
-**Parameters:**
-- `language` (string, optional): Language for the response.
+**Returns:** A object containing information about the default sink.
 
-**Returns:** `Promise<unknown>`.
+#### `getDefaultSource(language = null)`
 
-##### `getDefaultSource(language = null)`
+Retrieves the default source if defined, or the first available source.
 
-Gets the default audio source.
+- `language` – (Optional) Language setting for the Accept-Language header.
 
-**Parameters:**
-- `language` (string, optional): Language for the response.
+**Returns:** A object containing information about the default source.
 
-**Returns:** `Promise<unknown>`.
+#### `getSinks(language = null)`
 
-##### `getSinks(language = null)`
+Retrieves a list of all available sinks.
 
-Gets all available audio sinks.
+- `language` – (Optional) Language setting for the Accept-Language header.
 
-**Parameters:**
-- `language` (string, optional): Language for the response.
+**Returns:** A list of available sinks.
 
-**Returns:** `Promise<unknown>`.
+#### `getSources(language = null)`
 
-##### `getSources(language = null)`
+Retrieves a list of all available sources.
 
-Gets all available audio sources.
+- `language` – (Optional) Language setting for the Accept-Language header.
 
-**Parameters:**
-- `language` (string, optional): Language for the response.
-
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncAudio`.
+**Returns:** A list of available sources.
 
 ---
 
 ### Auth
 
-Provides methods for authentication token and session management.
-
-#### Constructor
-
 ```js
-const auth = new Auth(client);
+const auth = new Auth(client);   // or new AsyncAuth(client)
 ```
 
-#### Methods
+#### `getAPITokens()`
 
-##### `getAPITokens()`
+Retrieve the API tokens associated with the authenticated user.
 
-Gets all API tokens for the current user.
+- `language` – (Optional) Language setting for the API request.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** JSON response from the server.
 
-##### `revokeAPIToken(tokenName)`
+#### `revokeAPIToken(tokenName)`
 
-Revokes a specific API token.
+Revoke a specific API token associated with the authenticated user.
 
-**Parameters:**
-- `tokenName` (string): The name of the token to revoke.
+- `tokenName` – Name of the API token to be revoked.
+- `language` – (Optional) Language setting for the API request.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** JSON response from the server.
 
-##### `logout(refreshToken, sessionID)`
+#### `logout(refreshToken, sessionID)`
 
-Terminates a session.
+Terminate the session associated with a refresh token.
 
-**Parameters:**
-- `refreshToken` (string): The refresh token associated with the session.
-- `sessionID` (string): The session ID.
+- `refreshToken` – The refresh token used to delete the session.
+- `id` – The user ID associated with the refresh token.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** JSON response from the server.
 
-##### `getSessions()`
+#### `getSessions()`
 
-Gets all active sessions for the current user.
+Retrieve the sessions associated with the authenticated user.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** JSON response from the server.
 
-##### `getToken({ grantType, code, redirectURI, clientID, refreshToken, codeVerifier } = {})`
+#### `getToken({ useCookie = false, grantType = null, code = null, redirectURI = null, clientID = null, refreshToken = null, codeVerifier = null } = {})`
 
-Obtains access and refresh tokens. Parameters are passed as a destructured object.
+Obtain access and refresh tokens.
 
-**Parameters:**
-- `grantType` (string, optional): The OAuth grant type.
-- `code` (string, optional): Authorization code.
-- `redirectURI` (string, optional): OAuth redirect URI.
-- `clientID` (string, optional): OAuth client ID.
-- `refreshToken` (string, optional): Refresh token for renewal.
-- `codeVerifier` (string, optional): PKCE code verifier.
+- `useCookie` – (Optional) Whether to use cookies for the session.
+- `grantType` – (Optional) The type of grant being requested.
+- `code` – (Optional) Authorization code for authentication.
+- `redirectUri` – (Optional) Redirect URI for OAuth authentication.
+- `clientID` – (Optional) Client ID for authentication.
+- `refreshToken` – (Optional) Refresh token for token renewal.
+- `codeVerifier` – (Optional) Code verifier for PKCE authentication.
 
-**Returns:** `Promise<unknown>`.
-
-```js
-const tokenData = await auth.getToken({ grantType: "password", clientID: "my-app" });
-```
-
-Also available as `AsyncAuth`.
+**Returns:** JSON response from the server.
 
 ---
 
 ### ChannelTypes
 
-Provides methods to retrieve channel type information.
-
-#### Constructor
-
 ```js
-const channelTypes = new ChannelTypes(client);
+const channelTypes = new ChannelTypes(client);   // or new AsyncChannelTypes(client)
 ```
 
-#### Methods
+#### `getChannelTypes(prefixes = null, language = null)`
 
-##### `getChannelTypes(prefixes = null, language = null)`
+Retrieves all available channel types.
 
-Gets all available channel types.
+- `language` – Optional headers 'Accept-Language' to specify the preferred language.
+- `prefixes` – Optional query parameter to filter channel types by prefix.
 
-**Parameters:**
-- `prefixes` (string, optional): Filter by prefix.
-- `language` (string, optional): Language for the response.
+**Returns:** A list of channel types.
 
-**Returns:** `Promise<unknown>`.
+#### `getChannelType(channelTypeUID, language = null)`
 
-##### `getChannelType(channelTypeUID, language = null)`
+Retrieves the item types the given trigger channel type UID can be linked to.
 
-Gets a specific channel type.
+- `channelTypeUID` – The unique UID of the channel type.
+- `language` – Optional headers 'Accept-Language' to specify the preferred language.
 
-**Parameters:**
-- `channelTypeUID` (string): The UID of the channel type.
-- `language` (string, optional): Language for the response.
+**Returns:** Details of the specific channel type.
 
-**Returns:** `Promise<unknown>`.
+#### `getLinkableItemTypes(channelTypeUID)`
 
-##### `getLinkableItemTypes(channelTypeUID)`
+Retrieves the item types that can be linked to the specified trigger channel type.
 
-Gets item types that can be linked to a trigger channel type.
+- `channelTypeUID` – The unique UID of the channel type.
 
-**Parameters:**
-- `channelTypeUID` (string): The UID of the channel type.
-
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncChannelTypes`.
+**Returns:** A list of item types.
 
 ---
 
 ### ConfigDescriptions
 
-Provides methods to retrieve configuration descriptions.
-
-#### Constructor
-
 ```js
-const configDescriptions = new ConfigDescriptions(client);
+const configDescriptions = new ConfigDescriptions(client);   // or new AsyncConfigDescriptions(client)
 ```
 
-#### Methods
+#### `getConfigDescriptions(scheme = null, language = null)`
 
-##### `getConfigDescriptions(scheme = null, language = null)`
+Retrieves all available config descriptions.
 
-Gets all configuration descriptions.
+- `language` – Optional headers 'Accept-Language' to specify the preferred language.
+- `scheme` – Optional query parameter to filter results by a specific scheme.
 
-**Parameters:**
-- `scheme` (string, optional): Filter by scheme.
-- `language` (string, optional): Language for the response.
+**Returns:** A list of configuration descriptions.
 
-**Returns:** `Promise<unknown>`.
+#### `getConfigDescription(uri, language = null)`
 
-##### `getConfigDescription(uri, language = null)`
+Retrieves a config description by URI.
 
-Gets a specific configuration description by URI.
+- `uri` – The URI of the requested configuration description.
+- `language` – Optional headers 'Accept-Language' to specify the preferred language.
 
-**Parameters:**
-- `uri` (string): The URI of the configuration description.
-- `language` (string, optional): Language for the response.
-
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncConfigDescriptions`.
+**Returns:** Details of the specific configuration description.
 
 ---
 
 ### Discovery
 
-Provides methods to interact with the openHAB discovery service.
-
-#### Constructor
-
 ```js
-const discovery = new Discovery(client);
+const discovery = new Discovery(client);   // or new AsyncDiscovery(client)
 ```
 
-#### Methods
-
-##### `getDiscoveryBindings()`
+#### `getDiscoveryBindings()`
 
 Gets all bindings that support discovery.
 
-**Returns:** `Promise<unknown>` — list of binding IDs.
+**Returns:** Eine Liste der Bindings als Strings.
 
-##### `getBindingInfo(bindingID, language = null)`
+#### `getBindingInfo(bindingID, language = null)`
 
-Gets information about a specific binding.
+Gets information about the discovery services for a binding.
 
-**Parameters:**
-- `bindingID` (string): The ID of the binding.
-- `language` (string, optional): Language for the response.
+- `bindingId` – The ID of the binding to get discovery information for.
+- `language` – Optional language parameter for the response (Accept-Language header).
 
-**Returns:** `Promise<unknown>`.
+**Returns:** Information about the discovery service for the specified binding.
 
-##### `startBindingScan(bindingID, input = null)`
+#### `startBindingScan(bindingID, input = null)`
 
-Starts the discovery scan for a binding.
+Starts asynchronous discovery process for a binding and returns the timeout in seconds of the discovery operation.
 
-**Parameters:**
-- `bindingID` (string): The ID of the binding.
-- `input` (string, optional): Optional scan input.
+- `bindingID` – The ID of the binding for which the discovery is to be started.
+- `input` – An input parameter to start the discovery.
 
-**Returns:** `Promise<unknown>` — timeout duration in seconds.
-
-```js
-const timeout = await discovery.startBindingScan("zwave");
-console.log("Scan timeout:", timeout, "seconds");
-```
-
-Also available as `AsyncDiscovery`.
+**Returns:** Timeout duration of the discovery operation in seconds.
 
 ---
 
 ### Events
 
-Provides methods to subscribe to the openHAB event bus via SSE.
-
-#### Constructor
-
 ```js
-const events = new Events(client);
+const events = new Events(client);   // or new AsyncEvents(client)
 ```
 
-#### Methods
+#### `getEvents(topics = null)`
 
-##### `getEvents(topics = null)`
+Get all available events, optionally filtered by topic.
 
-Gets a stream of all openHAB events, optionally filtered by topic.
+- `topics` – A comma-separated list of topics to filter the events by (e.g. "openhab/items/*/statechanged,openhab/things/*/statuschanged"). The wildcard * also matches slashes.
 
-**Parameters:**
-- `topics` (string, optional): Comma-separated list of topics to filter.
+**Returns:** A SSE stream of events (fetch Response) or {"error": ...}.
 
-**Returns:** `Promise<Response>` — SSE stream.
+#### `initiateStateTracker()`
 
-##### `initiateStateTracker()`
+Initiates a new item state tracker connection. The first event of the stream carries the connection ID, which is needed for updateSSEConnectionItems().
 
-Initiates a new state tracker connection.
+**Returns:** A SSE stream (fetch Response) or {"error": ...}.
 
-**Returns:** `Promise<unknown>` — the SSE connection ID.
+#### `updateSSEConnectionItems(connectionID, items)`
 
-##### `updateSSEConnectionItems(connectionID, items)`
+Changes the list of items a SSE connection will receive state updates for.
 
-Updates the items tracked by an existing SSE connection.
+- `connectionID` – The ID of the existing connection.
+- `items` – A list of item names to subscribe to for state updates.
 
-**Parameters:**
-- `connectionID` (string): The ID of the SSE connection.
-- `items` (Array): List of item names to track.
-
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncEvents`.
+**Returns:** A success message when the update is completed.
 
 ---
 
 ### ItemEvents
 
-Provides SSE streams for item-related events.
-
-#### Constructor
-
 ```js
-const itemEvents = new ItemEvents(client);
+const itemEvents = new ItemEvents(client);   // or new AsyncItemEvents(client)
 ```
 
-#### Methods
+#### `ItemEvent()`
 
-##### `ItemEvent()`
+Get all item-related events.
 
-Subscribes to all item events.
+**Returns:** A SSE stream of item events.
 
-**Returns:** `Promise<Response>`.
+#### `ItemAddedEvent(itemName = "*")`
 
-##### `ItemAddedEvent(itemName = "*")`
+Get events for added items.
 
-Subscribes to item added events.
+- `itemName` – The name of the item (default is "*").
 
-**Parameters:**
-- `itemName` (string, optional): Filter by item name (default `"*"` for all).
+**Returns:** A SSE stream of added item events.
 
-**Returns:** `Promise<Response>`.
+#### `ItemRemovedEvent(itemName = "*")`
 
-##### `ItemRemovedEvent(itemName = "*")`
+Get events for removed items.
 
-Subscribes to item removed events.
+- `itemName` – The name of the item (default is "*").
 
-**Parameters:**
-- `itemName` (string, optional): Filter by item name (default `"*"`).
+**Returns:** A SSE stream of removed item events.
 
-**Returns:** `Promise<Response>`.
+#### `ItemUpdatedEvent(itemName = "*")`
 
-##### `ItemUpdatedEvent(itemName = "*")`
+Get events for updated items.
 
-Subscribes to item updated events.
+- `itemName` – The name of the item (default is "*").
 
-**Parameters:**
-- `itemName` (string, optional): Filter by item name (default `"*"`).
+**Returns:** A SSE stream of updated item events.
 
-**Returns:** `Promise<Response>`.
+#### `ItemCommandEvent(itemName = "*")`
 
-##### `ItemCommandEvent(itemName = "*")`
+Get events for item commands.
 
-Subscribes to item command events.
+- `itemName` – The name of the item (default is "*").
 
-**Parameters:**
-- `itemName` (string, optional): Filter by item name (default `"*"`).
+**Returns:** A SSE stream of item command events.
 
-**Returns:** `Promise<Response>`.
+#### `ItemStateEvent(itemName = "*")`
 
-##### `ItemStateEvent(itemName = "*")`
+Get events for item state updates.
 
-Subscribes to item state events.
+- `itemName` – The name of the item (default is "*").
 
-**Parameters:**
-- `itemName` (string, optional): Filter by item name (default `"*"`).
+**Returns:** A SSE stream of item state events.
 
-**Returns:** `Promise<Response>`.
+#### `ItemStatePredictedEvent(itemName = "*")`
 
-##### `ItemStatePredictedEvent(itemName = "*")`
+Get events for predicted item state changes.
 
-Subscribes to item state predicted events.
+- `itemName` – The name of the item (default is "*").
 
-**Parameters:**
-- `itemName` (string, optional): Filter by item name (default `"*"`).
+**Returns:** A SSE stream of item state predicted events.
 
-**Returns:** `Promise<Response>`.
+#### `ItemStateChangedEvent(itemName = "*")`
 
-##### `ItemStateChangedEvent(itemName = "*")`
+Get events for item state changes. Note: with the default "*", state changes of group items are included as well, because their topic openhab/items/<group>/<member>/statechanged also matches the pattern.
 
-Subscribes to item state changed events.
+- `itemName` – The name of the item (default is "*").
 
-**Parameters:**
-- `itemName` (string, optional): Filter by item name (default `"*"`).
+**Returns:** A SSE stream of item state changed events.
 
-**Returns:** `Promise<Response>`.
+#### `GroupItemStateChangedEvent(itemName = "*", memberName = "*")`
 
-```js
-const response = await itemEvents.ItemStateChangedEvent("MyLightSwitch");
-const reader   = response.body.getReader();
-const decoder  = new TextDecoder();
-let   buffer   = "";
+Get events for state changes of group items.
 
-while (true) {
-  const { done, value } = await reader.read();
-  if (done) break;
+- `itemName` – The name of the group item (default is "*").
+- `memberName` – The name of the group member that caused the change (default is "*").
 
-  buffer += decoder.decode(value, { stream: true });
-  const lines = buffer.split("\n");
-  buffer = lines.pop();
-
-  for (const line of lines) {
-    if (!line.startsWith("data: ")) continue;
-    const raw = line.slice(6).trim();
-    if (!raw) continue;
-    try {
-      const event   = JSON.parse(raw);
-      const payload = JSON.parse(event.payload);
-      console.log(event.type, "→", payload.value);
-    } catch {}
-  }
-}
-```
-
-##### `GroupItemStateChangedEvent(itemName, memberName)`
-
-Subscribes to group item state changed events for a specific member.
-
-**Parameters:**
-- `itemName` (string): The name of the group item.
-- `memberName` (string): The name of the member item.
-
-**Returns:** `Promise<Response>`.
-
-Also available as `AsyncItemEvents`.
+**Returns:** A SSE stream of group item state changed events.
 
 ---
 
 ### ThingEvents
 
-Provides SSE streams for thing-related events.
-
-#### Constructor
-
 ```js
-const thingEvents = new ThingEvents(client);
+const thingEvents = new ThingEvents(client);   // or new AsyncThingEvents(client)
 ```
 
-#### Methods
+#### `ThingAddedEvent(thingUID = "*")`
 
-##### `ThingAddedEvent(thingUID = "*")`
+Get events for added things.
 
-Subscribes to thing added events.
+- `thingUID` – The UID of the thing (default is "*").
 
-**Parameters:**
-- `thingUID` (string, optional): Filter by thing UID (default `"*"`).
+**Returns:** A SSE stream of added thing events.
 
-**Returns:** `Promise<Response>`.
+#### `ThingRemovedEvent(thingUID = "*")`
 
-##### `ThingRemovedEvent(thingUID = "*")`
+Get events for removed things.
 
-Subscribes to thing removed events.
+- `thingUID` – The UID of the thing (default is "*").
 
-##### `ThingUpdatedEvent(thingUID = "*")`
+**Returns:** A SSE stream of removed thing events.
 
-Subscribes to thing updated events.
+#### `ThingUpdatedEvent(thingUID = "*")`
 
-##### `ThingStatusInfoEvent(thingUID = "*")`
+Get events for updated things.
 
-Subscribes to thing status info events.
+- `thingUID` – The UID of the thing (default is "*").
 
-##### `ThingStatusInfoChangedEvent(thingUID = "*")`
+**Returns:** A SSE stream of updated thing events.
 
-Subscribes to thing status info changed events.
+#### `ThingStatusInfoEvent(thingUID = "*")`
 
-All methods accept an optional `thingUID` filter (default `"*"`).
+Get events for thing status information.
 
-Also available as `AsyncThingEvents`.
+- `thingUID` – The UID of the thing (default is "*").
+
+**Returns:** A SSE stream of thing status information events.
+
+#### `ThingStatusInfoChangedEvent(thingUID = "*")`
+
+Get events for thing status information changes.
+
+- `thingUID` – The UID of the thing (default is "*").
+
+**Returns:** A SSE stream of thing status information changed events.
 
 ---
 
 ### InboxEvents
 
-Provides SSE streams for inbox (discovery) events.
-
-#### Constructor
-
 ```js
-const inboxEvents = new InboxEvents(client);
+const inboxEvents = new InboxEvents(client);   // or new AsyncInboxEvents(client)
 ```
 
-#### Methods
+#### `InboxAddedEvent(thingUID = "*")`
 
-##### `InboxAddedEvent(thingUID = "*")`
+Get events for added things in the inbox.
 
-Subscribes to inbox added events.
+- `thingUID` – The UID of the thing (default is "*").
 
-##### `InboxRemovedEvent(thingUID = "*")`
+**Returns:** A SSE stream of added inbox events.
 
-Subscribes to inbox removed events.
+#### `InboxRemovedEvent(thingUID = "*")`
 
-##### `InboxUpdatedEvent(thingUID = "*")`
+Get events for removed things in the inbox.
 
-Subscribes to inbox updated events.
+- `thingUID` – The UID of the thing (default is "*").
 
-All methods accept an optional `thingUID` filter (default `"*"`).
+**Returns:** A SSE stream of removed inbox events.
 
-Also available as `AsyncInboxEvents`.
+#### `InboxUpdatedEvent(thingUID = "*")`
+
+Get events for updated things in the inbox.
+
+- `thingUID` – The UID of the thing (default is "*").
+
+**Returns:** A SSE stream of updated inbox events.
 
 ---
 
 ### LinkEvents
 
-Provides SSE streams for item-channel link events.
-
-#### Constructor
-
 ```js
-const linkEvents = new LinkEvents(client);
+const linkEvents = new LinkEvents(client);   // or new AsyncLinkEvents(client)
 ```
 
-#### Methods
+#### `ItemChannelLinkAddedEvent(itemName = "*", channelUID = "*")`
 
-##### `ItemChannelLinkAddedEvent(itemName = "*", channelUID = "*")`
+Get events for added item-channel links.
 
-Subscribes to link added events.
+- `itemName` – The name of the item (default is "*").
+- `channelUID` – The UID of the channel (default is "*").
 
-**Parameters:**
-- `itemName` (string, optional): Filter by item name (default `"*"`).
-- `channelUID` (string, optional): Filter by channel UID (default `"*"`).
+**Returns:** A SSE stream of added item-channel link events.
 
-**Returns:** `Promise<Response>`.
+#### `ItemChannelLinkRemovedEvent(itemName = "*", channelUID = "*")`
 
-##### `ItemChannelLinkRemovedEvent(itemName = "*", channelUID = "*")`
+Get events for removed item-channel links.
 
-Subscribes to link removed events.
+- `itemName` – The name of the item (default is "*").
+- `channelUID` – The UID of the channel (default is "*").
 
-Also available as `AsyncLinkEvents`.
+**Returns:** A SSE stream of removed item-channel link events.
 
 ---
 
 ### ChannelEvents
 
-Provides SSE streams for channel events.
-
-#### Constructor
-
 ```js
-const channelEvents = new ChannelEvents(client);
+const channelEvents = new ChannelEvents(client);   // or new AsyncChannelEvents(client)
 ```
 
-#### Methods
+#### `ChannelDescriptionChangedEvent(channelUID = "*")`
 
-##### `ChannelDescriptionChangedEvent(channelUID = "*")`
+Get events for changes in channel descriptions.
 
-Subscribes to channel description changed events.
+- `channelUID` – The UID of the channel (default is "*").
 
-**Parameters:**
-- `channelUID` (string, optional): Filter by channel UID (default `"*"`).
+**Returns:** A SSE stream of channel description changed events.
 
-**Returns:** `Promise<Response>`.
+#### `ChannelTriggeredEvent(channelUID = "*")`
 
-##### `ChannelTriggeredEvent(channelUID = "*")`
+Get events for triggered channels.
 
-Subscribes to channel triggered events.
+- `channelUID` – The UID of the channel (default is "*").
 
-**Parameters:**
-- `channelUID` (string, optional): Filter by channel UID (default `"*"`).
-
-**Returns:** `Promise<Response>`.
-
-Also available as `AsyncChannelEvents`.
+**Returns:** A SSE stream of channel triggered events.
 
 ---
 
 ### Iconsets
 
-Provides methods to retrieve available iconsets.
+```js
+const iconsets = new Iconsets(client);   // or new AsyncIconsets(client)
+```
 
-#### Methods
+#### `getIconsets(language = null)`
 
-##### `getIconsets(language = null)`
+Gets all icon sets.
 
-Gets all available iconsets.
+- `language` – Optional language preference for the response (e.g. 'en', 'de').
 
-**Parameters:**
-- `language` (string, optional): Language for the response.
-
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncIconsets`.
+**Returns:** A list of icon sets with details such as ID, label, description and supported formats.
 
 ---
 
 ### Inbox
 
-Provides methods to manage the openHAB inbox (discovery results).
-
-#### Constructor
-
 ```js
-const inbox = new Inbox(client);
+const inbox = new Inbox(client);   // or new AsyncInbox(client)
 ```
 
-#### Methods
+#### `getDiscoveredThings(includeIgnored = true)`
 
-##### `getDiscoveredThings(includeIgnored = true)`
+Get all discovered things.
 
-Gets all discovered things.
+- `includeIgnored` – Whether ignored entries should also be included (default: true).
 
-**Parameters:**
-- `includeIgnored` (boolean, optional): Include ignored results (default `true`).
+**Returns:** A list of discovered things with details such as UID, flag, label, and properties.
 
-**Returns:** `Promise<unknown>`.
+#### `removeDiscoveryResult(thingUID)`
 
-##### `removeDiscoveryResult(thingUID)`
+Removes the discovery result from the inbox.
 
-Removes a discovery result.
+- `thingUID` – The UID of the discovered thing to be removed.
 
-**Parameters:**
-- `thingUID` (string): The UID of the thing to remove.
+**Returns:** The API response to the delete request.
 
-**Returns:** `Promise<unknown>`.
+#### `approveDiscoveryResult(thingUID, thingLabel, newThingID = null, language = null)`
 
-##### `approveDiscoveryResult(thingUID, thingLabel, newThingID = null, language = null)`
+Approves the discovery result by adding the thing to the registry.
 
-Approves a discovery result and creates the thing.
+- `thingUID` – The UID of the discovered thing.
+- `thingLabel` – The new name of the thing.
+- `newThingID` – Optional: The new thing ID.
+- `language` – Optional: Language preference for the response.
 
-**Parameters:**
-- `thingUID` (string): The UID of the thing.
-- `thingLabel` (string): The label for the new thing.
-- `newThingID` (string, optional): Optional new thing ID.
-- `language` (string, optional): Language for the response.
+**Returns:** The API response to the approval request.
 
-**Returns:** `Promise<unknown>`.
+#### `ignoreDiscoveryResult(thingUID)`
 
-##### `ignoreDiscoveryResult(thingUID)`
+Flags a discovery result as ignored for further processing.
 
-Marks a discovery result as ignored.
+- `thingUID` – The UID of the discovered thing.
 
-**Parameters:**
-- `thingUID` (string): The UID of the thing.
+**Returns:** The API response to the ignore request.
 
-**Returns:** `Promise<unknown>`.
-
-##### `unignoreDiscoveryResult(thingUID)`
+#### `unignoreDiscoveryResult(thingUID)`
 
 Removes the ignore flag from a discovery result.
 
-**Parameters:**
-- `thingUID` (string): The UID of the thing.
+- `thingUID` – The UID of the discovered thing.
 
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncInbox`.
+**Returns:** The API response to the unignore request.
 
 ---
 
 ### Items
 
-Provides methods to manage openHAB items.
-
-#### Constructor
-
 ```js
-import { OpenHABClient, Items } from "nodejs-openhab-rest-client";
-
-const client   = new OpenHABClient("http://127.0.0.1:8080", "openhab", "habopen");
-const itemsAPI = new Items(client);
+const items = new Items(client);   // or new AsyncItems(client)
 ```
 
-#### Methods
+#### `getItems({ type = null, tags = null, metadata = ".*", recursive = false, fields = null, staticDataOnly = false, language = null, parents = null } = {})`
 
-##### `getItems({ type, tags, metadata, recursive, fields, staticDataOnly, language } = {})`
+Get all available items.
 
-Gets all available items. Parameters are passed as a destructured object.
+- `type` – Optional; Item type filter.
+- `tags` – Optional; Item tag filter.
+- `metadata` – Optional; Metadata selector (default: .*).
+- `recursive` – Optional; Whether to fetch group members recursively (default: false).
+- `fields` – Optional; Limit to specific fields (comma-separated).
+- `staticDataOnly` – Optional; Only returns cached data (default: false).
+- `language` – Optional; Language filter for headers "Accept-Language".
+- `parents` – Optional; Include the parent groups of each item (openHAB 4.1+).
 
-**Parameters:**
-- `type` (string, optional): Item type filter.
-- `tags` (string, optional): Item tag filter.
-- `metadata` (string, optional): Metadata selector (default `".*"`).
-- `recursive` (boolean, optional): Fetch group members recursively (default `false`).
-- `fields` (string, optional): Comma-separated list of fields to return.
-- `staticDataOnly` (boolean, optional): Return only cached data (default `false`).
-- `language` (string, optional): Language for the response.
+**Returns:** A list containing the item data as returned by the API.
 
-**Returns:** `Promise<unknown>`.
+#### `addOrUpdateItems(items)`
 
-```js
-const switches = await itemsAPI.getItems({ type: "Switch", recursive: true });
-```
+Adds a list of items to the registry or updates the existing items.
 
-##### `addOrUpdateItems(items)`
+- `items` – A list of item data (object).
 
-Adds or updates a list of items.
+**Returns:** A response object or confirmation that the items were successfully added or updated.
 
-**Parameters:**
-- `items` (object[]): List of item data objects.
+#### `getItem(itemName, { metadata = ".*", recursive = true, language = null, parents = null } = {})`
 
-**Returns:** `Promise<unknown>`.
+Gets a single item.
 
-##### `getItem(itemName, { metadata, recursive, language } = {})`
+- `itemName` – The name of the item.
+- `metadata` – Optional; Metadata selector (default: .*).
+- `recursive` – Optional; Whether to fetch group members recursively (default: true).
+- `language` – Optional; Language filter for headers "Accept-Language".
 
-Gets a single item. Options are passed as a destructured object.
+**Returns:** A object containing the requested item data.
 
-**Parameters:**
-- `itemName` (string): The name of the item.
-- `metadata` (string, optional): Metadata selector (default `".*"`).
-- `recursive` (boolean, optional): Fetch group members recursively (default `true`).
-- `language` (string, optional): Language for the response.
+#### `addOrUpdateItem(itemName, itemData, language = null)`
 
-**Returns:** `Promise<unknown>`.
+Adds a new item to the registry or updates the existing item.
 
-```js
-const item = await itemsAPI.getItem("MyLightSwitch");
-```
+- `itemName` – The name of the item.
+- `itemData` – The data of the item (object).
+- `language` – Optional; Language filter for headers "Accept-Language".
 
-##### `addOrUpdateItem(itemName, itemData, language = null)`
+**Returns:** A response object or confirmation that the item was successfully added or updated.
 
-Adds or updates a single item.
-
-**Parameters:**
-- `itemName` (string): The name of the item.
-- `itemData` (object): The item data.
-- `language` (string, optional): Language for the response.
-
-**Returns:** `Promise<unknown>`.
-
-##### `sendCommand(itemName, command)`
+#### `sendCommand(itemName, command, source = null)`
 
 Sends a command to an item.
 
-**Parameters:**
-- `itemName` (string): The name of the item.
-- `command` (string): The command to send (e.g. `"ON"`, `"OFF"`, `"50"`).
+- `itemName` – The name of the item.
+- `command` – The command to be sent (e.g., ON, OFF).
+- `source` – Optional; Source of the command, shown in the event (openHAB 4.1+).
 
-**Returns:** `Promise<unknown>`.
+**Returns:** A response object or confirmation that the command was successfully sent.
 
-```js
-await itemsAPI.sendCommand("MyLightSwitch", "ON");
-```
-
-##### `postUpdate(itemName, state)`
-
-Updates the state of an item. Alias for `updateItemState`.
-
-**Parameters:**
-- `itemName` (string): The name of the item.
-- `state` (string): The new state.
-
-**Returns:** `Promise<unknown>`.
-
-##### `deleteItem(itemName)`
-
-Removes an item from the registry.
-
-**Parameters:**
-- `itemName` (string): The name of the item.
-
-**Returns:** `Promise<unknown>`.
-
-##### `addGroupMember(itemName, memberItemName)`
-
-Adds a member to a group item.
-
-**Parameters:**
-- `itemName` (string): The group item name.
-- `memberItemName` (string): The member item name.
-
-**Returns:** `Promise<unknown>`.
-
-##### `removeGroupMember(itemName, memberItemName)`
-
-Removes a member from a group item.
-
-**Parameters:**
-- `itemName` (string): The group item name.
-- `memberItemName` (string): The member item name.
-
-**Returns:** `Promise<unknown>`.
-
-##### `addMetadata(itemName, namespace, metadata)`
-
-Adds metadata to an item.
-
-**Parameters:**
-- `itemName` (string): The item name.
-- `namespace` (string): The metadata namespace.
-- `metadata` (object): The metadata to add.
-
-**Returns:** `Promise<unknown>`.
-
-##### `removeMetadata(itemName, namespace)`
-
-Removes metadata from an item.
-
-**Parameters:**
-- `itemName` (string): The item name.
-- `namespace` (string): The metadata namespace to remove.
-
-**Returns:** `Promise<unknown>`.
-
-##### `getMetadataNamespaces(itemName, language = null)`
-
-Gets all metadata namespaces of an item.
-
-**Parameters:**
-- `itemName` (string): The item name.
-- `language` (string, optional): Language for the response.
-
-**Returns:** `Promise<unknown>`.
-
-##### `getSemanticItem(itemName, semanticClass, language = null)`
-
-Gets the item that defines the requested semantics.
-
-**Parameters:**
-- `itemName` (string): The item name.
-- `semanticClass` (string): The requested semantic class.
-- `language` (string, optional): Language for the response.
-
-**Returns:** `Promise<unknown>`.
-
-##### `getItemState(itemName)`
-
-Gets the state of an item as plain text.
-
-**Parameters:**
-- `itemName` (string): The item name.
-
-**Returns:** `Promise<unknown>` — the current state as a string.
-
-```js
-const state = await itemsAPI.getItemState("MyLightSwitch");
-console.log(state); // "ON"
-```
-
-##### `updateItemState(itemName, state, language = null)`
+#### `postUpdate(itemName, state, source = null)`
 
 Updates the state of an item.
 
-**Parameters:**
-- `itemName` (string): The item name.
-- `state` (string): The new state.
-- `language` (string, optional): Language for the response.
+- `itemName` – The name of the item.
+- `state` – The state to be signaled for the item.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** A response object or confirmation that the state was successfully updated.
 
-##### `addTag(itemName, tag)`
+#### `deleteItem(itemName)`
+
+Removes an item from the registry.
+
+- `itemName` – The name of the item.
+
+**Returns:** A response object or confirmation that the item was successfully deleted.
+
+#### `addGroupMember(itemName, memberItemName)`
+
+Adds a new member to a group item.
+
+- `itemName` – The name of the group item.
+- `memberItemName` – The name of the member item.
+
+**Returns:** A response object or confirmation that the group member was successfully added.
+
+#### `removeGroupMember(itemName, memberItemName)`
+
+Removes an existing member from a group item.
+
+- `itemName` – The name of the group item.
+- `memberItemName` – The name of the member item.
+
+**Returns:** A response object or confirmation that the group member was successfully removed.
+
+#### `addMetadata(itemName, namespace, metadata)`
+
+Adds metadata to an item.
+
+- `itemName` – The name of the item.
+- `namespace` – The namespace of the metadata.
+- `metadata` – A object containing the metadata.
+
+**Returns:** A response object or confirmation that the metadata was successfully added.
+
+#### `removeMetadata(itemName, namespace)`
+
+Removes metadata from an item.
+
+- `itemName` – The name of the item.
+- `namespace` – The namespace of the metadata.
+
+**Returns:** A response object or confirmation that the metadata was successfully removed.
+
+#### `getMetadataNamespaces(itemName, language = null)`
+
+Gets the namespaces of an item.
+
+- `itemName` – The name of the item.
+- `language` – Optional; Language filter for headers "Accept-Language".
+
+**Returns:** A list of namespaces associated with the item.
+
+#### `getSemanticItem(itemName, semanticClass, language = null)`
+
+Gets the item that defines the requested semantics of an item.
+
+- `itemName` – The name of the item.
+- `semanticClass` – The requested semantic class.
+- `language` – Optional; Language filter for headers "Accept-Language".
+
+**Returns:** A object containing the semantic item data.
+
+#### `getItemState(itemName)`
+
+Gets the state of an item.
+
+- `itemName` – The name of the item.
+
+**Returns:** A object containing the current state of the item.
+
+#### `updateItemState(itemName, state, language = null, source = null)`
+
+Updates the state of an item.
+
+- `itemName` – The name of the item.
+- `state` – The new state of the item.
+- `language` – Optional; Language filter for headers "Accept-Language".
+
+**Returns:** A response object or confirmation that the state was successfully updated.
+
+#### `addTag(itemName, tag)`
 
 Adds a tag to an item.
 
-**Parameters:**
-- `itemName` (string): The item name.
-- `tag` (string): The tag to add.
+- `itemName` – The name of the item.
+- `tag` – The tag to be added.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** A response object or confirmation that the tag was successfully added.
 
-##### `removeTag(itemName, tag)`
+#### `removeTag(itemName, tag)`
 
 Removes a tag from an item.
 
-**Parameters:**
-- `itemName` (string): The item name.
-- `tag` (string): The tag to remove.
+- `itemName` – The name of the item.
+- `tag` – The tag to be removed.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** A response object or confirmation that the tag was successfully removed.
 
-##### `purgeOrphanedMetadata()`
+#### `purgeOrphanedMetadata()`
 
-Removes unused/orphaned metadata from all items.
+Remove unused/orphaned metadata.
 
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncItems`.
+**Returns:** A response object or confirmation that orphaned metadata was successfully purged.
 
 ---
 
 ### Links
 
-Provides methods to manage item-channel links.
-
-#### Constructor
-
 ```js
-const links = new Links(client);
+const links = new Links(client);   // or new AsyncLinks(client)
 ```
 
-#### Methods
+#### `getLinks(channelUID = null, itemName = null)`
 
-##### `getLinks(channelUID = null, itemName = null)`
+Gets all available links.
 
-Gets all links, optionally filtered.
+- `channelUID` – Optional; Filters by the Channel UID.
+- `itemName` – Optional; Filters by the Item Name.
 
-**Parameters:**
-- `channelUID` (string, optional): Filter by channel UID.
-- `itemName` (string, optional): Filter by item name.
+**Returns:** A list of links containing details such as ItemName, ChannelUID, and configuration.
 
-**Returns:** `Promise<unknown>`.
+#### `getLink(itemName, channelUID)`
 
-##### `getLink(itemName, channelUID)`
+Retrieves an individual link.
 
-Gets a specific link.
+- `itemName` – The name of the item.
+- `channelUID` – The UID of the channel.
 
-**Parameters:**
-- `itemName` (string): The item name.
-- `channelUID` (string): The channel UID (URL-encoded automatically).
+**Returns:** The link with details of the item, channel UID, and configuration.
 
-**Returns:** `Promise<unknown>`.
-
-##### `linkItemToChannel(itemName, channelUID, configuration)`
+#### `linkItemToChannel(itemName, channelUID, configuration)`
 
 Links an item to a channel.
 
-**Parameters:**
-- `itemName` (string): The item name.
-- `channelUID` (string): The channel UID.
-- `configuration` (object): The link configuration.
+- `itemName` – The name of the item.
+- `channelUID` – The UID of the channel.
+- `configuration` – The configuration for the link.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** The API response when the link is successfully created.
 
-##### `unlinkItemFromChannel(itemName, channelUID)`
+#### `unlinkItemFromChannel(itemName, channelUID)`
 
 Unlinks an item from a channel.
 
-**Parameters:**
-- `itemName` (string): The item name.
-- `channelUID` (string): The channel UID.
+- `itemName` – The name of the item.
+- `channelUID` – The UID of the channel.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** The API response when the link is successfully removed.
 
-##### `deleteAllLinks(object)`
+#### `deleteAllLinks(object)`
 
-Deletes all links for an item or thing.
+Delete all links that refer to an item or thing.
 
-**Parameters:**
-- `object` (string): The item name or thing UID.
+- `object` – The name of the item or the UID of the thing.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** The API response when all links are successfully deleted.
 
-##### `getOrphanLinks()`
+#### `getOrphanLinks()`
 
-Gets all orphan links (links to non-existent channels).
+Get orphan links between items and broken/non-existent thing channels.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** A list of orphan links.
 
-##### `purgeUnusedLinks()`
+#### `purgeUnusedLinks()`
 
-Removes all unused/orphaned links.
+Remove unused/orphaned links.
 
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncLinks`.
+**Returns:** The API response when the links are successfully removed.
 
 ---
 
 ### Logging
 
-Provides methods to manage openHAB loggers.
-
-#### Constructor
-
 ```js
-const logging = new Logging(client);
+const logging = new Logging(client);   // or new AsyncLogging(client)
 ```
 
-#### Methods
+#### `getLoggers()`
 
-##### `getLoggers()`
+Get all loggers.
 
-Gets all loggers and their levels.
+**Returns:** A list of loggers with names and levels.
 
-**Returns:** `Promise<unknown>`.
+#### `getLogger(loggerName)`
 
-##### `getLogger(loggerName)`
+Get a single logger.
 
-Gets a specific logger.
+- `loggerName` – The name of the logger.
 
-**Parameters:**
-- `loggerName` (string): The logger name.
+**Returns:** The logger with the specified name and level.
 
-**Returns:** `Promise<unknown>`.
+#### `modifyOrAddLogger(loggerName, level)`
 
-##### `modifyOrAddLogger(loggerName, level)`
+Modify or add a logger.
 
-Modifies or adds a logger.
+- `loggerName` – The name of the logger.
+- `level` – The level of the logger.
 
-**Parameters:**
-- `loggerName` (string): The logger name.
-- `level` (string): The log level (`"DEBUG"`, `"INFO"`, `"WARN"`, `"ERROR"`).
+**Returns:** The API response after modification or addition.
 
-**Returns:** `Promise<unknown>`.
+#### `removeLogger(loggerName)`
 
-##### `removeLogger(loggerName)`
+Remove a single logger.
 
-Removes a logger.
+- `loggerName` – The name of the logger.
 
-**Parameters:**
-- `loggerName` (string): The logger name.
-
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncLogging`.
+**Returns:** The API response after removing the logger.
 
 ---
 
 ### ModuleTypes
 
-Provides methods to retrieve rule module types.
-
-#### Constructor
-
 ```js
-const moduleTypes = new ModuleTypes(client);
+const moduleTypes = new ModuleTypes(client);   // or new AsyncModuleTypes(client)
 ```
 
-#### Methods
+#### `getModuleTypes(tags = null, typeFilter = null, language = null)`
 
-##### `getModuleTypes(tags = null, typeFilter = null, language = null)`
+Get all available module types.
 
-Gets all available module types.
+- `tags` – Optional filter for tags.
+- `typeFilter` – Optional filter for the type (action, condition, trigger).
+- `language` – (Optional) Language setting for the Accept-Language header.
 
-**Parameters:**
-- `tags` (string, optional): Filter by tags.
-- `typeFilter` (string, optional): Filter by type (`"trigger"`, `"condition"`, `"action"`).
-- `language` (string, optional): Language for the response.
+**Returns:** A list of module types.
 
-**Returns:** `Promise<unknown>`.
+#### `getModuleType(moduleTypeUID, language = null)`
 
-##### `getModuleType(moduleTypeUID, language = null)`
+Gets a module type corresponding to the given UID.
 
-Gets a specific module type.
+- `moduleTypeUID` – The UID of the module type.
+- `language` – (Optional) Language setting for the Accept-Language header.
 
-**Parameters:**
-- `moduleTypeUID` (string): The UID of the module type.
-- `language` (string, optional): Language for the response.
-
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncModuleTypes`.
+**Returns:** A object with the module type information.
 
 ---
 
 ### Persistence
 
-Provides methods to interact with openHAB persistence services.
-
-#### Constructor
-
 ```js
-const persistence = new Persistence(client);
+const persistence = new Persistence(client);   // or new AsyncPersistence(client)
 ```
 
-#### Methods
+#### `getServices(language = null)`
 
-##### `getServices(language = null)`
+Gets a list of persistence services.
 
-Gets all persistence services.
+**Returns:** A list of persistence services with IDs, labels, and types.
 
-**Parameters:**
-- `language` (string, optional): Language for the response.
+#### `getServiceConfiguration(serviceID)`
 
-**Returns:** `Promise<unknown>`.
+Gets a persistence service configuration.
 
-##### `getServiceConfiguration(serviceID)`
+- `serviceID` – The ID of the persistence service.
 
-Gets the configuration of a persistence service.
+**Returns:** The configuration of the service.
 
-**Parameters:**
-- `serviceID` (string): The persistence service ID.
+#### `setServiceConfiguration(serviceID, config)`
 
-**Returns:** `Promise<unknown>`.
+Sets a persistence service configuration.
 
-##### `setServiceConfiguration(serviceID, config)`
+- `serviceID` – The ID of the persistence service.
+- `config` – The configuration data.
 
-Sets the configuration of a persistence service.
+**Returns:** The response from the API after modification.
 
-**Parameters:**
-- `serviceID` (string): The persistence service ID.
-- `config` (object): The configuration data.
+#### `deleteServiceConfiguration(serviceID)`
 
-**Returns:** `Promise<unknown>`.
+Deletes a persistence service configuration.
 
-##### `deleteServiceConfiguration(serviceID)`
+- `serviceID` – The ID of the persistence service.
 
-Deletes the configuration of a persistence service.
+**Returns:** The response from the API after deleting the configuration.
 
-**Parameters:**
-- `serviceID` (string): The persistence service ID.
+#### `getItemsFromService(serviceID = null, itemName = null)`
 
-**Returns:** `Promise<unknown>`.
+Gets a list of items available via a specific persistence service.
 
-##### `getItemsFromService(serviceID = null)`
+- `serviceID` – Optional; The ID of the persistence service (default service if omitted).
+- `itemName` – Optional; Only return information for this item.
 
-Gets all items available via a persistence service.
+**Returns:** A list of items with their last and earliest timestamps.
 
-**Parameters:**
-- `serviceID` (string, optional): The persistence service ID.
+#### `getItemPersistenceData(itemName, serviceID = null, { startTime = null, endTime = null, page = null, pageLength = null, boundary = false, itemState = false, displayState = null, language = null } = {})`
 
-**Returns:** `Promise<unknown>`.
+Gets item persistence data from the persistence service.
 
-##### `getItemPersistenceData(itemName, serviceID, { startTime, endTime, page, pageLength, boundary, itemState } = {})`
+- `itemName` – The name of the item.
+- `serviceID` – Optional; The ID of the persistence service. If omitted, the default service is used.
+- `startTime` – Optional; Start time (ISO 8601, e.g. "2026-10-30T00:00:00.000Z"). Defaults to 1 day before `endTime`.
+- `endTime` – Optional; End time (ISO 8601). Defaults to the current time.
+- `page` – Optional; Page number, starting at 0. Paging is only active if `pageLength` is set as well.
+- `pageLength` – Optional; Number of data points per page. Without it, all data points are returned.
+- `boundary` – Optional; Also return the values just before and after the time range (default: false).
+- `itemState` – Optional; Add the current item state at the end of the series (default: false).
+- `displayState` – Optional; Add a formatted display state to every data point (openHAB 5.0+).
+- `language` – Optional; Value for the "Accept-Language" header.
 
-Gets item persistence data for a time range. Options are passed as a destructured object.
+**Returns:** The retrieved data points of the item.
 
-**Parameters:**
-- `itemName` (string): The item name.
-- `serviceID` (string): The persistence service ID.
-- `startTime` (string, optional): Start timestamp.
-- `endTime` (string, optional): End timestamp.
-- `page` (number, optional): Page number (default `1`).
-- `pageLength` (number, optional): Items per page (default `50`).
-- `boundary` (boolean, optional): Include boundary values (default `false`).
-- `itemState` (boolean, optional): Return item state instead of raw value (default `false`).
+#### `storeItemData(itemName, time, state, serviceID = null)`
 
-**Returns:** `Promise<unknown>`.
+Stores item persistence data into the persistence service.
 
-```js
-const data = await persistence.getItemPersistenceData(
-  "MyTemperatureSensor",
-  "rrd4j",
-  {
-    startTime: "2024-01-01T00:00:00.000+0000",
-    endTime:   "2024-01-02T00:00:00.000+0000",
-    pageLength: 100
-  }
-);
-```
+- `serviceID` – The ID of the persistence service.
+- `itemName` – The name of the item.
+- `time` – The time of the storage.
+- `state` – The state of the item to be stored.
 
-##### `storeItemData(itemName, time, state, serviceID = null)`
+**Returns:** The response from the API after storing the data.
 
-Stores a data point for an item.
+#### `deleteItemData(itemName, startTime, endTime, serviceID)`
 
-**Parameters:**
-- `itemName` (string): The item name.
-- `time` (string): The timestamp.
-- `state` (string): The state value.
-- `serviceID` (string, optional): The persistence service ID.
+Deletes item persistence data from a specific persistence service in a given time range.
 
-**Returns:** `Promise<unknown>`.
+- `serviceID` – The ID of the persistence service.
+- `itemName` – The name of the item.
+- `startTime` – The start time of the data to be deleted.
+- `endTime` – The end time of the data to be deleted.
 
-##### `deleteItemData(itemName, startTime, endTime, serviceID)`
-
-Deletes item data within a time range.
-
-**Parameters:**
-- `itemName` (string): The item name.
-- `startTime` (string): Start timestamp.
-- `endTime` (string): End timestamp.
-- `serviceID` (string): The persistence service ID.
-
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncPersistence`.
+**Returns:** The response from the API after deleting the data.
 
 ---
 
 ### ProfileTypes
 
-Provides methods to retrieve profile types.
-
-#### Constructor
-
 ```js
-const profileTypes = new ProfileTypes(client);
+const profileTypes = new ProfileTypes(client);   // or new AsyncProfileTypes(client)
 ```
 
-#### Methods
-
-##### `getProfileTypes(channelTypeUID = null, itemType = null, language = null)`
+#### `getProfileTypes(channelTypeUID = null, itemType = null, language = null)`
 
 Gets all available profile types.
 
-**Parameters:**
-- `channelTypeUID` (string, optional): Filter by channel type UID.
-- `itemType` (string, optional): Filter by item type.
-- `language` (string, optional): Language for the response.
+- `channelTypeUID` – Optional filter for the channel type.
+- `itemType` – Optional filter for the item type.
+- `language` – (Optional) Language setting for the Accept-Language header.
 
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncProfileTypes`.
+**Returns:** A list of profile types.
 
 ---
 
 ### Rules
 
-Provides methods to manage openHAB rules.
-
-#### Constructor
-
 ```js
-const rules = new Rules(client);
+const rules = new Rules(client);   // or new AsyncRules(client)
 ```
 
-#### Methods
+#### `getRules(prefix = null, tags = null, summary = false, staticDataOnly = false)`
 
-##### `getRules(prefix = null, tags = null, summary = false, staticDataOnly = false)`
+Get available rules, optionally filtered by tags and/or prefix.
 
-Gets all rules.
+- `prefix` – Optional prefix to filter the results.
+- `tags` – Optional tag array to filter the results.
+- `summary` – If true, only summary fields will be returned.
+- `staticDataOnly` – If true, only static data will be returned.
 
-**Parameters:**
-- `prefix` (string, optional): Filter by rule UID prefix.
-- `tags` (string, optional): Filter by tags.
-- `summary` (boolean, optional): Return summary only (default `false`).
-- `staticDataOnly` (boolean, optional): Return only cached data (default `false`).
+**Returns:** A list of rules (JSON objects).
 
-**Returns:** `Promise<unknown>`.
+#### `createRule(ruleData)`
 
-##### `createRule(ruleData)`
+Creates a rule.
 
-Creates a new rule.
+- `ruleData` – The rule data to be created (as a object).
 
-**Parameters:**
-- `ruleData` (object): The rule configuration.
+**Returns:** The created rule (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `getRule(ruleUID)`
 
-##### `getRule(ruleUID)`
+Gets the rule corresponding to the given UID.
 
-Gets a specific rule.
+- `ruleUID` – The UID of the rule to retrieve.
 
-**Parameters:**
-- `ruleUID` (string): The rule UID.
+**Returns:** The rule object (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `updateRule(ruleUID, ruleData)`
 
-##### `updateRule(ruleUID, ruleData)`
+Updates an existing rule corresponding to the given UID.
 
-Updates an existing rule.
+- `ruleUID` – The UID of the rule to update.
+- `ruleData` – The new rule data (as a object).
 
-**Parameters:**
-- `ruleUID` (string): The rule UID.
-- `ruleData` (object): The updated rule data.
+**Returns:** The updated rule (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `deleteRule(ruleUID)`
 
-##### `deleteRule(ruleUID)`
+Removes an existing rule corresponding to the given UID.
 
-Deletes a rule.
+- `ruleUID` – The UID of the rule to delete.
 
-**Parameters:**
-- `ruleUID` (string): The rule UID.
+**Returns:** The API response (status code).
 
-**Returns:** `Promise<unknown>`.
+#### `getModule(ruleUID, moduleCategory, moduleID)`
 
-##### `getModule(ruleUID, moduleCategory, moduleID)`
+Gets the rule's module corresponding to the given category and ID.
 
-Gets a specific module of a rule.
+- `ruleUID` – The UID of the rule.
+- `moduleCategory` – The category of the module.
+- `moduleID` – The ID of the module.
 
-**Parameters:**
-- `ruleUID` (string): The rule UID.
-- `moduleCategory` (string): The module category (`"triggers"`, `"conditions"`, `"actions"`).
-- `moduleID` (string): The module ID.
+**Returns:** The module (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `getModuleConfig(ruleUID, moduleCategory, moduleID)`
 
-##### `getModuleConfig(ruleUID, moduleCategory, moduleID)`
+Gets the module's configuration.
 
-Gets the configuration of a module.
+- `ruleUID` – The UID of the rule.
+- `moduleCategory` – The category of the module.
+- `moduleID` – The ID of the module.
 
-**Parameters:**
-- `ruleUID` (string): The rule UID.
-- `moduleCategory` (string): The module category.
-- `moduleID` (string): The module ID.
+**Returns:** The module configuration (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `getModuleConfigParam(ruleUID, moduleCategory, moduleID, param)`
 
-##### `getModuleConfigParam(ruleUID, moduleCategory, moduleID, param)`
+Gets the module's configuration parameter.
 
-Gets a specific configuration parameter of a module.
+- `ruleUID` – The UID of the rule.
+- `moduleCategory` – The category of the module.
+- `moduleID` – The ID of the module.
+- `param` – The name of the configuration parameter.
 
-**Parameters:**
-- `ruleUID` (string): The rule UID.
-- `moduleCategory` (string): The module category.
-- `moduleID` (string): The module ID.
-- `param` (string): The parameter name.
+**Returns:** The configuration parameter value (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `setModuleConfigParam(ruleUID, moduleCategory, moduleID, param, value)`
 
-##### `setModuleConfigParam(ruleUID, moduleCategory, moduleID, param, value)`
+Sets the module's configuration parameter value.
 
-Sets a configuration parameter of a module.
+- `ruleUID` – The UID of the rule.
+- `moduleCategory` – The category of the module.
+- `moduleID` – The ID of the module.
+- `param` – The name of the configuration parameter.
+- `value` – The value to set for the configuration parameter.
 
-**Parameters:**
-- `ruleUID` (string): The rule UID.
-- `moduleCategory` (string): The module category.
-- `moduleID` (string): The module ID.
-- `param` (string): The parameter name.
-- `value` (string): The new value.
+**Returns:** The API response (status code).
 
-**Returns:** `Promise<unknown>`.
+#### `getActions(ruleUID)`
 
-##### `getActions(ruleUID)`
+Gets the rule actions.
 
-Gets all action modules of a rule.
+- `ruleUID` – The UID of the rule.
 
-**Parameters:**
-- `ruleUID` (string): The rule UID.
+**Returns:** A list of actions (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `getConditions(ruleUID)`
 
-##### `getConditions(ruleUID)`
+Gets the rule conditions.
 
-Gets all condition modules of a rule.
+- `ruleUID` – The UID of the rule.
 
-**Parameters:**
-- `ruleUID` (string): The rule UID.
+**Returns:** A list of conditions (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `getConfiguration(ruleUID)`
 
-##### `getTriggers(ruleUID)`
+Gets the rule configuration values.
 
-Gets all trigger modules of a rule.
+- `ruleUID` – The UID of the rule.
 
-**Parameters:**
-- `ruleUID` (string): The rule UID.
+**Returns:** The configuration of the rule (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `updateConfiguration(ruleUID, configData)`
 
-##### `getConfiguration(ruleUID)`
+Sets the rule configuration values.
 
-Gets the configuration of a rule.
+- `ruleUID` – The UID of the rule.
+- `configData` – The new configuration data (as a object).
 
-**Parameters:**
-- `ruleUID` (string): The rule UID.
+**Returns:** The updated configuration (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `setRuleState(ruleUID, enable)`
 
-##### `updateConfiguration(ruleUID, configData)`
+Sets the rule configuration values. Activates or deactivates the rule.
 
-Updates the configuration of a rule.
+- `ruleUID` – The UID of the rule.
+- `enable` – If true, the rule will be activated. If false, the rule will be deactivated.
 
-**Parameters:**
-- `ruleUID` (string): The rule UID.
-- `configData` (object): The new configuration.
+**Returns:** The API response (status code).
 
-**Returns:** `Promise<unknown>`.
+#### `enable(ruleUID)`
 
-##### `setRuleState(ruleUID, enable)`
+#### `disable(ruleUID)`
 
-Enables or disables a rule.
+#### `runNow(ruleUID, contextData = null)`
 
-**Parameters:**
-- `ruleUID` (string): The rule UID.
-- `enable` (boolean): `true` to enable, `false` to disable.
+Executes the rule's actions immediately.
 
-**Returns:** `Promise<unknown>`.
+- `ruleUID` – The UID of the rule.
+- `contextData` – Optional context data for executing the rule.
 
-##### `enable(ruleUID)`
+**Returns:** The API response (status code).
 
-Enables a rule. Convenience wrapper for `setRuleState(ruleUID, true)`.
+#### `getTriggers(ruleUID)`
 
-**Returns:** `Promise<unknown>`.
+Gets the rule triggers.
 
-##### `disable(ruleUID)`
+- `ruleUID` – The UID of the rule.
 
-Disables a rule. Convenience wrapper for `setRuleState(ruleUID, false)`.
+**Returns:** A list of triggers (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `simulateSchedule(fromTime, untilTime)`
 
-##### `runNow(ruleUID, contextData = null)`
+Simulates the executions of rules filtered by tag 'Schedule' within the given times.
 
-Executes a rule immediately.
+- `fromTime` – Simulates the executions of rules filtered by tag 'Schedule' within the given times.
+- `untilTime` – Simulates the executions of rules filtered by tag 'Schedule' within the given times.
 
-**Parameters:**
-- `ruleUID` (string): The rule UID.
-- `contextData` (object, optional): Context data for the execution.
-
-**Returns:** `Promise<unknown>`.
-
-##### `simulateSchedule(fromTime, untilTime)`
-
-Simulates the rule schedule between two timestamps.
-
-**Parameters:**
-- `fromTime` (string): The start timestamp.
-- `untilTime` (string): The end timestamp.
-
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncRules`.
+**Returns:** The simulation results (JSON).
 
 ---
 
 ### Services
 
-Provides methods to manage openHAB configurable services.
-
-#### Constructor
-
 ```js
-const services = new Services(client);
+const services = new Services(client);   // or new AsyncServices(client)
 ```
 
-#### Methods
+#### `getServices(language = null)`
 
-##### `getServices(language = null)`
+Get all configurable services.
 
-Gets all configurable services.
+- `language` – Optional language setting (as header).
 
-**Parameters:**
-- `language` (string, optional): Language for the response.
+**Returns:** A list of services (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `getService(serviceID, language = null)`
 
-##### `getService(serviceID, language = null)`
+Get configurable service for the given service ID.
 
-Gets a specific service by ID.
+- `serviceID` – The ID of the service to retrieve.
+- `language` – Optional language setting (as header).
 
-**Parameters:**
-- `serviceID` (string): The service ID.
-- `language` (string, optional): Language for the response.
+**Returns:** The service object (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `getServiceConfig(serviceID)`
 
-##### `getServiceConfig(serviceID)`
+Get service configuration for the given service ID.
 
-Gets the configuration of a service.
+- `serviceID` – The ID of the service.
 
-**Parameters:**
-- `serviceID` (string): The service ID.
+**Returns:** The configuration of the service (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `updateServiceConfig(serviceID, configData, language = null)`
 
-##### `updateServiceConfig(serviceID, configData, language = null)`
+Updates a service configuration for the given service ID and returns the old configuration.
 
-Updates the configuration of a service.
+- `serviceID` – The ID of the service.
+- `configData` – The new configuration data (as a object).
 
-**Parameters:**
-- `serviceID` (string): The service ID.
-- `configData` (object): The new configuration.
-- `language` (string, optional): Language for the response.
+**Returns:** The old configuration of the service (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `deleteServiceConfig(serviceID)`
 
-##### `deleteServiceConfig(serviceID)`
+Deletes a service configuration for the given service ID and returns the old configuration.
 
-Deletes the configuration of a service.
+- `serviceID` – The ID of the service.
 
-**Parameters:**
-- `serviceID` (string): The service ID.
+**Returns:** The old configuration of the service (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `getServiceContexts(serviceID, language = null)`
 
-##### `getServiceContexts(serviceID, language = null)`
+Get existing multiple context service configurations for the given factory PID.
 
-Gets all contexts of a multi-context service.
+- `serviceID` – The ID of the service.
+- `language` – Optional language setting (as header).
 
-**Parameters:**
-- `serviceID` (string): The service ID.
-- `language` (string, optional): Language for the response.
-
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncServices`.
+**Returns:** A list of contexts (JSON).
 
 ---
 
 ### Sitemaps
 
-Provides methods to interact with openHAB sitemaps.
-
-#### Constructor
-
 ```js
-const sitemaps = new Sitemaps(client);
+const sitemaps = new Sitemaps(client);   // or new AsyncSitemaps(client)
 ```
 
-#### Methods
+#### `getSitemaps()`
 
-##### `getSitemaps()`
+Get all available sitemaps.
 
-Gets all available sitemaps.
+**Returns:** A list of sitemaps (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `getSitemap(sitemapName, type = null, jsonCallback = null, includeHidden = false, language = null)`
 
-##### `getSitemap(sitemapName, type = null, jsonCallback = null, includeHidden = false, language = null)`
+Get sitemap by name.
 
-Gets a specific sitemap.
+- `sitemapName` – The name of the sitemap to retrieve.
+- `type` – Optional query parameter for type.
+- `jsonCallback` – Optional query parameter for JSON callback.
+- `includeHidden` – Whether hidden widgets should be included.
+- `language` – Optional language setting (as header).
 
-**Parameters:**
-- `sitemapName` (string): The sitemap name.
-- `type` (string, optional): The subscription type.
-- `jsonCallback` (string, optional): JSONP callback name.
-- `includeHidden` (boolean, optional): Include hidden widgets (default `false`).
-- `language` (string, optional): Language for the response.
+**Returns:** The sitemap object (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `getSitemapPage(sitemapName, pageID, subscriptionID = null, includeHidden = false, language = null)`
 
-##### `getSitemapPage(sitemapName, pageID, subscriptionID = null, includeHidden = false, language = null)`
+Polls the data for one page of a sitemap.
 
-Gets a specific page of a sitemap.
+- `sitemapName` – The name of the sitemap.
+- `pageID` – The ID of the page.
+- `subscriptionID` – Optional query parameter for the subscription ID.
+- `includeHidden` – Whether hidden widgets should be included.
+- `language` – Optional language setting (as header).
 
-**Parameters:**
-- `sitemapName` (string): The sitemap name.
-- `pageID` (string): The page ID.
-- `subscriptionID` (string, optional): Subscription ID for real-time updates.
-- `includeHidden` (boolean, optional): Include hidden widgets (default `false`).
-- `language` (string, optional): Language for the response.
+**Returns:** The sitemap page (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `getFullSitemap(sitemapName, subscriptionID = null, includeHidden = false, language = null)`
 
-##### `getFullSitemap(sitemapName, subscriptionID = null, includeHidden = false, language = null)`
+Polls the data for a whole sitemap. Not recommended due to potentially high traffic.
 
-Gets the full sitemap including all pages.
+- `sitemapName` – The name of the sitemap.
+- `subscriptionID` – Optional query parameter for the subscription ID.
+- `includeHidden` – Whether hidden widgets should be included.
+- `language` – Optional language setting (as header).
 
-**Parameters:**
-- `sitemapName` (string): The sitemap name.
-- `subscriptionID` (string, optional): Subscription ID for real-time updates.
-- `includeHidden` (boolean, optional): Include hidden widgets (default `false`).
-- `language` (string, optional): Language for the response.
+**Returns:** The complete sitemap (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `getSitemapEvents(subscriptionID, sitemapName = null, pageID = null)`
 
-##### `getSitemapEvents(subscriptionID, sitemapName = null, pageID = null)`
+Opens the event stream (SSE) of a sitemap subscription for one page.
 
-Gets sitemap events for a subscription as an SSE stream.
+- `subscriptionID` – The ID of the subscription (see subscribeToSitemapEvents()).
+- `sitemapName` – The name of the sitemap.
+- `pageID` – The ID of the page (the sitemap name for the home page).
 
-**Parameters:**
-- `subscriptionID` (string): The subscription ID.
-- `sitemapName` (string, optional): Filter by sitemap name.
-- `pageID` (string, optional): Filter by page ID.
+**Returns:** A SSE stream (fetch Response, read it with iterSSEEvents()) or {"error": ...}.
 
-**Returns:** `Promise<Response>` — SSE stream.
+#### `getFullSitemapEvents(subscriptionID, sitemapName = null)`
 
-##### `getFullSitemapEvents(subscriptionID, sitemapName = null)`
+Opens the event stream (SSE) of a sitemap subscription for the whole sitemap. Not recommended due to potentially high traffic.
 
-Gets full sitemap events for a subscription as an SSE stream.
+- `subscriptionID` – The ID of the subscription.
+- `sitemapName` – The name of the sitemap.
 
-**Parameters:**
-- `subscriptionID` (string): The subscription ID.
-- `sitemapName` (string, optional): Filter by sitemap name.
+**Returns:** A SSE stream (fetch Response) or {"error": ...}.
 
-**Returns:** `Promise<Response>` — SSE stream.
+#### `subscribeToSitemapEvents()`
 
-##### `subscribeToSitemapEvents()`
+Creates a sitemap event subscription.
 
-Creates a new subscription for sitemap events.
-
-**Returns:** `Promise<unknown>` — contains the subscription ID.
-
-Also available as `AsyncSitemaps`.
+**Returns:** The response to the subscription request (JSON).
 
 ---
 
 ### Systeminfo
 
-Provides methods to retrieve openHAB system information.
-
-#### Constructor
-
 ```js
-const systeminfo = new Systeminfo(client);
+const systeminfo = new Systeminfo(client);   // or new AsyncSysteminfo(client)
 ```
 
-#### Methods
+#### `getSystemInfo()`
 
-##### `getSystemInfo()`
+Gets information about the system.
 
-Gets general system information.
+**Returns:** A object with system informations.
 
-**Returns:** `Promise<unknown>`.
+#### `getUoMInfo()`
 
-```js
-const info = await systeminfo.getSystemInfo();
-console.log(info);
-```
+Get all supported dimensions and their system units.
 
-##### `getUoMInfo()`
-
-Gets units of measurement information.
-
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncSysteminfo`.
+**Returns:** A object with UOM informations.
 
 ---
 
 ### Tags
 
-Provides methods to manage openHAB semantic tags.
-
-#### Constructor
-
 ```js
-const tags = new Tags(client);
+const tags = new Tags(client);   // or new AsyncTags(client)
 ```
 
-#### Methods
+#### `getTags(language = null)`
 
-##### `getTags(language = null)`
+Get all available semantic tags.
 
-Gets all available semantic tags.
+- `language` – Optional headers for language setting.
 
-**Parameters:**
-- `language` (string, optional): Language for the response.
+**Returns:** A list of semantic tags (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `createTag(tagData, language = null)`
 
-##### `createTag(tagData, language = null)`
+Creates a new semantic tag and adds it to the registry.
 
-Creates a new semantic tag.
+- `tagData` – The data object for the tag to be created.
+- `language` – Optional headers for language setting.
 
-**Parameters:**
-- `tagData` (object): The tag data.
-- `language` (string, optional): Language for the response.
+**Returns:** The response to the tag creation request (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `getTag(tagID, language = null)`
 
-##### `getTag(tagID, language = null)`
+Gets a semantic tag and its sub-tags.
 
-Gets a specific semantic tag.
+- `tagID` – The ID of the tag to retrieve.
+- `language` – Optional headers for language setting.
 
-**Parameters:**
-- `tagID` (string): The tag ID.
-- `language` (string, optional): Language for the response.
+**Returns:** The tag object and its sub-tags (JSON).
 
-**Returns:** `Promise<unknown>`.
-
-##### `updateTag(tagID, tagData, language = null)`
+#### `updateTag(tagID, tagData, language = null)`
 
 Updates a semantic tag.
 
-**Parameters:**
-- `tagID` (string): The tag ID.
-- `tagData` (object): The new tag data.
-- `language` (string, optional): Language for the response.
+- `tagID` – The ID of the tag to be updated.
+- `tagData` – The new tag data.
+- `language` – Optional headers for language setting.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** The response to the tag update request (JSON).
 
-##### `deleteTag(tagID, language = null)`
+#### `deleteTag(tagID, language = null)`
 
-Deletes a semantic tag.
+Removes a semantic tag and its sub-tags from the registry.
 
-**Parameters:**
-- `tagID` (string): The tag ID.
-- `language` (string, optional): Language for the response.
+- `tagID` – The ID of the tag to be removed.
+- `language` – Optional headers for language setting.
 
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncTags`.
+**Returns:** The response to the tag deletion request (JSON).
 
 ---
 
 ### Templates
 
-Provides methods to retrieve rule templates.
-
-#### Constructor
-
 ```js
-const templates = new Templates(client);
+const templates = new Templates(client);   // or new AsyncTemplates(client)
 ```
 
-#### Methods
+#### `getTemplates(language = null)`
 
-##### `getTemplates(language = null)`
+Get all available templates.
 
-Gets all available rule templates.
+- `language` – (Optional) Language setting for the Accept-Language header.
 
-**Parameters:**
-- `language` (string, optional): Language for the response.
+**Returns:** A list of templates.
 
-**Returns:** `Promise<unknown>`.
+#### `getTemplate(templateUID, language = null)`
 
-##### `getTemplate(templateUID, language = null)`
+Gets a template corresponding to the given UID.
 
-Gets a specific rule template.
+- `templateUID` – The UID of the template.
+- `language` – (Optional) Language setting for the Accept-Language header.
 
-**Parameters:**
-- `templateUID` (string): The template UID.
-- `language` (string, optional): Language for the response.
-
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncTemplates`.
+**Returns:** A object with the details of the template.
 
 ---
 
 ### ThingTypes
 
-Provides methods to retrieve thing types.
-
-#### Constructor
-
 ```js
-const thingTypes = new ThingTypes(client);
+const thingTypes = new ThingTypes(client);   // or new AsyncThingTypes(client)
 ```
 
-#### Methods
+#### `getThingTypes(bindingID = null, language = null)`
 
-##### `getThingTypes(bindingID = null, language = null)`
+Gets all available thing types without config description, channels, and properties.
 
-Gets all available thing types.
+- `bindingID` – (Optional) Filter by binding ID.
+- `language` – (Optional) Language setting for the Accept-Language header.
 
-**Parameters:**
-- `bindingID` (string, optional): Filter by binding ID.
-- `language` (string, optional): Language for the response.
+**Returns:** A list of thing types.
 
-**Returns:** `Promise<unknown>`.
+#### `getThingType(thingTypeUID, language = null)`
 
-##### `getThingType(thingTypeUID, language = null)`
+Gets a thing type by UID.
 
-Gets a specific thing type.
+- `thingTypeUID` – The UID of the thing type.
+- `language` – (Optional) Language setting for the Accept-Language header.
 
-**Parameters:**
-- `thingTypeUID` (string): The thing type UID.
-- `language` (string, optional): Language for the response.
-
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncThingTypes`.
+**Returns:** A object with the details of the thing type or an empty response with status 204.
 
 ---
 
 ### Things
 
-Provides methods to manage openHAB things.
-
-#### Constructor
-
 ```js
-const things = new Things(client);
+const things = new Things(client);   // or new AsyncThings(client)
 ```
 
-#### Methods
+#### `getThings(summary = false, staticDataOnly = false, language = null)`
 
-##### `getThings(summary = false, staticDataOnly = false, language = null)`
+Get all available things.
 
-Gets all things.
+- `summary` – If true, returns only the summary fields.
+- `staticDataOnly` – If true, returns a cacheable list.
+- `language` – The preferred language for the response.
 
-**Parameters:**
-- `summary` (boolean, optional): Return summary only (default `false`).
-- `staticDataOnly` (boolean, optional): Return only cached data (default `false`).
-- `language` (string, optional): Language for the response.
+**Returns:** JSON response with the things.
 
-**Returns:** `Promise<unknown>`.
+#### `createThing(thingData, language = null)`
 
-##### `createThing(thingData, language = null)`
+Creates a new thing and adds it to the registry.
 
-Creates a new thing.
+- `thingData` – The JSON object containing the thing data.
+- `language` – The preferred language for the response.
 
-**Parameters:**
-- `thingData` (object): The thing configuration.
-- `language` (string, optional): Language for the response.
+**Returns:** The API response.
 
-**Returns:** `Promise<unknown>`.
+#### `getThing(thingUID, language = null)`
 
-##### `getThing(thingUID, language = null)`
+Gets a thing by UID.
 
-Gets a specific thing.
+- `thingUID` – The UID of the thing.
+- `language` – The preferred language for the response.
 
-**Parameters:**
-- `thingUID` (string): The thing UID.
-- `language` (string, optional): Language for the response.
+**Returns:** JSON response with the thing data.
 
-**Returns:** `Promise<unknown>`.
-
-##### `updateThing(thingUID, thingData, language = null)`
+#### `updateThing(thingUID, thingData, language = null)`
 
 Updates a thing.
 
-**Parameters:**
-- `thingUID` (string): The thing UID.
-- `thingData` (object): The updated thing data.
-- `language` (string, optional): Language for the response.
+- `thingUID` – The UID of the thing.
+- `thingData` – The JSON object containing the updated thing data.
+- `language` – The preferred language for the response.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** The API response.
 
-##### `deleteThing(thingUID, force = false, language = null)`
+#### `deleteThing(thingUID, force = false, language = null)`
 
-Deletes a thing.
+Removes a thing from the registry. Set 'force' to __true__ if you want the thing to be removed immediately.
 
-**Parameters:**
-- `thingUID` (string): The thing UID.
-- `force` (boolean, optional): Force deletion even if linked (default `false`).
-- `language` (string, optional): Language for the response.
+- `thingUID` – The UID of the thing.
+- `force` – If true, the thing will be immediately removed.
+- `language` – The preferred language for the response.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** The API response.
 
-##### `updateThingConfiguration(thingUID, configurationData, language = null)`
+#### `updateThingConfiguration(thingUID, configurationData, language = null)`
 
-Updates the configuration of a thing.
+Updates a thing's configuration.
 
-**Parameters:**
-- `thingUID` (string): The thing UID.
-- `configurationData` (object): The new configuration.
-- `language` (string, optional): Language for the response.
+- `thingUID` – The UID of the thing.
+- `configurationData` – The configuration data of the thing.
+- `language` – The preferred language for the response.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** The API response.
 
-##### `getThingConfigStatus(thingUID, language = null)`
+#### `getThingConfigStatus(thingUID, language = null)`
 
-Gets the configuration status of a thing.
+Gets the thing's configuration status.
 
-**Parameters:**
-- `thingUID` (string): The thing UID.
-- `language` (string, optional): Language for the response.
+- `thingUID` – The UID of the thing.
+- `language` – The preferred language for the response.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** JSON response with the thing's configuration status.
 
-##### `setThingStatus(thingUID, enabled, language = null)`
+#### `setThingStatus(thingUID, enabled, language = null)`
 
-Enables or disables a thing.
+Sets the thing's enabled status.
 
-**Parameters:**
-- `thingUID` (string): The thing UID.
-- `enabled` (boolean): `true` to enable, `false` to disable.
-- `language` (string, optional): Language for the response.
+- `thingUID` – The UID of the thing.
+- `enabled` – If true, the thing will be enabled.
+- `language` – The preferred language for the response.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** The API response.
 
-##### `enableThing(thingUID)`
+#### `enableThing(thingUID)`
 
-Enables a thing. Convenience wrapper for `setThingStatus(thingUID, true)`.
+#### `disableThing(thingUID)`
 
-**Returns:** `Promise<unknown>`.
-
-##### `disableThing(thingUID)`
-
-Disables a thing. Convenience wrapper for `setThingStatus(thingUID, false)`.
-
-**Returns:** `Promise<unknown>`.
-
-##### `updateThingFirmware(thingUID, firmwareVersion, language = null)`
+#### `updateThingFirmware(thingUID, firmwareVersion, language = null)`
 
 Updates the firmware of a thing.
 
-**Parameters:**
-- `thingUID` (string): The thing UID.
-- `firmwareVersion` (string): The firmware version to install.
-- `language` (string, optional): Language for the response.
+- `thingUID` – The UID of the thing.
+- `firmwareVersion` – The firmware version.
+- `language` – The preferred language for the response.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** The API response.
 
-##### `getThingFirmwareStatus(thingUID, language = null)`
+#### `getThingFirmwareStatus(thingUID, language = null)`
 
-Gets the firmware update status of a thing.
+Gets the thing's firmware status.
 
-**Parameters:**
-- `thingUID` (string): The thing UID.
-- `language` (string, optional): Language for the response.
+- `thingUID` – The UID of the thing.
+- `language` – The preferred language for the response.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** JSON response with the firmware status.
 
-##### `getThingFirmwares(thingUID, language = null)`
+#### `getThingFirmwares(thingUID, language = null)`
 
-Gets all available firmware versions for a thing.
+Gets all available firmwares for the provided thing UID.
 
-**Parameters:**
-- `thingUID` (string): The thing UID.
-- `language` (string, optional): Language for the response.
+- `thingUID` – The UID of the thing.
+- `language` – The preferred language for the response.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** A list of available firmwares.
 
-##### `getThingStatus(thingUID, language = null)`
+#### `getThingStatus(thingUID, language = null)`
 
-Gets the status of a thing.
+Gets the thing's status.
 
-**Parameters:**
-- `thingUID` (string): The thing UID.
-- `language` (string, optional): Language for the response.
+- `thingUID` – The UID of the thing.
+- `language` – The preferred language for the response.
 
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncThings`.
+**Returns:** JSON response with the thing's status.
 
 ---
 
 ### Transformations
 
-Provides methods to manage openHAB transformations.
-
-#### Constructor
-
 ```js
-const transformations = new Transformations(client);
+const transformations = new Transformations(client);   // or new AsyncTransformations(client)
 ```
 
-#### Methods
+#### `getTransformations()`
 
-##### `getTransformations()`
+Get a list of all transformations.
 
-Gets all transformations.
+**Returns:** A list of transformations (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `getTransformation(transformationUID)`
 
-##### `getTransformation(transformationUID)`
+Get a single transformation.
 
-Gets a specific transformation.
+- `transformationUID` – The transformationUID of the transformation to retrieve.
 
-**Parameters:**
-- `transformationUID` (string): The transformation UID.
+**Returns:** The transformation (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `updateTransformation(transformationUID, transformationData)`
 
-##### `updateTransformation(transformationUID, transformationData)`
+Update a single transformation.
 
-Updates a transformation.
+- `transformationUID` – The transformationUID of the transformation to update.
+- `transformationData` – The new data for the transformation.
 
-**Parameters:**
-- `transformationUID` (string): The transformation UID.
-- `transformationData` (object): The new transformation data.
+**Returns:** The response to the transformation update request (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `deleteTransformation(transformationUID)`
 
-##### `deleteTransformation(transformationUID)`
+Delete a single transformation.
 
-Deletes a transformation.
+- `transformationUID` – The transformationUID of the transformation to delete.
 
-**Parameters:**
-- `transformationUID` (string): The transformation UID.
+**Returns:** The response to the transformation update request (JSON) or status/error message.
 
-**Returns:** `Promise<unknown>`.
+#### `getTransformationServices()`
 
-##### `getTransformationServices()`
+Get all transformation services.
 
-Gets all available transformation services.
-
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncTransformations`.
+**Returns:** A list of transformation services (JSON).
 
 ---
 
 ### UI
 
-Provides methods to manage UI components and tiles.
-
-#### Constructor
-
 ```js
-const ui = new UI(client);
+const uI = new UI(client);   // or new AsyncUI(client)
 ```
 
-#### Methods
+#### `getUIComponents(namespace, summary = false)`
 
-##### `getUIComponents(namespace, summary = false)`
+Get all registered UI components in the specified namespace.
 
-Gets all UI components in a namespace.
+- `namespace` – The namespace for which UI components should be retrieved.
+- `summary` – If true, only summary fields will be returned.
 
-**Parameters:**
-- `namespace` (string): The namespace.
-- `summary` (boolean, optional): Return summary only (default `false`).
+**Returns:** A list of UI components (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `addUIComponent(namespace, componentData)`
 
-##### `addUIComponent(namespace, componentData)`
+Add a UI component in the specified namespace.
 
-Adds a UI component to a namespace.
+- `namespace` – The namespace where the UI component should be added.
+- `componentData` – The data of the UI component (JSON) to be added.
 
-**Parameters:**
-- `namespace` (string): The namespace.
-- `componentData` (object): The component data.
+**Returns:** The response to the request (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `getUIComponent(namespace, componentUID)`
 
-##### `getUIComponent(namespace, componentUID)`
+Get a specific UI component in the specified namespace.
 
-Gets a specific UI component.
+- `namespace` – The namespace where the UI component is located.
+- `componentUID` – The UID of the UI component to retrieve.
 
-**Parameters:**
-- `namespace` (string): The namespace.
-- `componentUID` (string): The component UID.
+**Returns:** The UI component (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `updateUIComponent(namespace, componentUID, componentData)`
 
-##### `updateUIComponent(namespace, componentUID, componentData)`
+Update a specific UI component in the specified namespace.
 
-Updates a UI component.
+- `namespace` – The namespace where the UI component should be updated.
+- `componentUID` – The UID of the UI component to update.
+- `componentData` – The new data for the UI component (JSON).
 
-**Parameters:**
-- `namespace` (string): The namespace.
-- `componentUID` (string): The component UID.
-- `componentData` (object): The new component data.
+**Returns:** The response to the request (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `deleteUIComponent(namespace, componentUID)`
 
-##### `deleteUIComponent(namespace, componentUID)`
+Remove a specific UI component in the specified namespace.
 
-Deletes a UI component.
+- `namespace` – The namespace where the UI component should be removed.
+- `componentUID` – The UID of the UI component to delete.
 
-**Parameters:**
-- `namespace` (string): The namespace.
-- `componentUID` (string): The component UID.
+**Returns:** The response to the request (JSON).
 
-**Returns:** `Promise<unknown>`.
+#### `getUITiles()`
 
-##### `getUITiles()`
+Get all registered UI tiles.
 
-Gets all registered UI tiles.
-
-**Returns:** `Promise<unknown>`.
-
-Also available as `AsyncUI`.
+**Returns:** A list of UI tiles (JSON).
 
 ---
 
 ### UUID
 
-Provides a method to retrieve the openHAB instance UUID.
-
-#### Constructor
-
 ```js
-const uuid = new UUID(client);
+const uUID = new UUID(client);   // or new AsyncUUID(client)
 ```
 
-#### Methods
+#### `getUUID()`
 
-##### `getUUID()`
+A unified unique id.
 
-Gets the UUID of the openHAB instance.
-
-**Returns:** `Promise<unknown>`.
-
-```js
-const id = await uuid.getUUID();
-console.log(id);
-```
-
-Also available as `AsyncUUID`.
+**Returns:** The UUID as String.
 
 ---
 
 ### Voice
 
-Provides methods to interact with the openHAB voice system.
-
-#### Constructor
-
 ```js
-const voice = new Voice(client);
+const voice = new Voice(client);   // or new AsyncVoice(client)
 ```
 
-#### Methods
-
-##### `getDefaultVoice()`
+#### `getDefaultVoice(language = null)`
 
 Gets the default voice.
 
-**Returns:** `Promise<unknown>`.
+**Returns:** A object with the details of the default voice.
 
-##### `getVoices()`
+#### `startDialog(sourceID, { ksID = null, sttID = null, ttsID = null, voiceID = null, hliIDs = null, sinkID = null, keyword = null, listeningItem = null, language = null } = {})`
 
-Gets all available voices.
+Start dialog processing for a given audio source.
 
-**Returns:** `Promise<unknown>`.
+- `sourceID` – The ID of the audio source.
+- `ksID` – The ID of the keyword spotter (optional).
+- `sttID` – The ID of the speech-to-text system (optional).
+- `ttsID` – The ID of the text-to-speech system (optional).
+- `voiceID` – The ID of the voice (optional).
+- `hliIDs` – A comma-separated list of interpreter IDs (optional).
+- `sinkID` – The ID of the audio output (optional).
+- `keyword` – The keyword used to start the dialog (optional).
+- `listeningItem` – The name of the item to listen to (optional).
+- `language` – The language for the request (optional).
 
-##### `getInterpreters(language = null)`
+**Returns:** The response from the server.
 
-Gets all available human language interpreters.
+#### `stopDialog(sourceID)`
 
-**Parameters:**
-- `language` (string, optional): Language for the response.
+Stop dialog processing for a given audio source.
 
-**Returns:** `Promise<unknown>`.
+- `sourceID` – The ID of the audio source.
 
-##### `getInterpreter(interpreterID, language = null)`
+**Returns:** The response from the server.
 
-Gets a specific interpreter.
+#### `getInterpreters(language = null)`
 
-**Parameters:**
-- `interpreterID` (string): The interpreter ID.
-- `language` (string, optional): Language for the response.
+Get the list of all interpreters.
 
-**Returns:** `Promise<unknown>`.
+- `language` – The language for the request (optional).
 
-##### `interpretText(text, language = null)`
+**Returns:** A list of interpreters if successful.
 
-Sends text to the default interpreter.
+#### `interpretText(text, language = null)`
 
-**Parameters:**
-- `text` (string): The text to interpret.
-- `language` (string, optional): The language of the text.
+Sends a text to the default human language interpreter.
 
-**Returns:** `Promise<unknown>`.
+- `text` – The text to be interpreted.
+- `language` – The language of the text.
+- `IDs` – A list of interpreter IDs (optional).
 
-##### `interpretTextBatch(text, IDs, language = null)`
+**Returns:** The response from the server.
 
-Sends text to multiple interpreters.
+#### `getInterpreter(interpreterID, language = null)`
 
-**Parameters:**
-- `text` (string): The text to interpret.
-- `IDs` (string[]): List of interpreter IDs.
-- `language` (string, optional): The language of the text.
+Gets a single interpreter.
 
-**Returns:** `Promise<unknown>`.
+- `interpreterID` – The ID of the interpreter.
+- `language` – The language for the request (optional).
 
-##### `startDialog(sourceID, { ksID, sttID, ttsID, voiceID, hliIDs, sinkID, keyword, listeningItem } = {})`
+**Returns:** The details of the interpreter.
 
-Starts dialog processing for an audio source. Options are passed as a destructured object.
+#### `interpretTextBatch(text, IDs, language = null)`
 
-**Parameters:**
-- `sourceID` (string): The audio source ID.
-- `ksID` (string, optional): Keyword spotter ID.
-- `sttID` (string, optional): Speech-to-text ID.
-- `ttsID` (string, optional): Text-to-speech ID.
-- `voiceID` (string, optional): Voice ID.
-- `hliIDs` (string, optional): Comma-separated interpreter IDs.
-- `sinkID` (string, optional): Audio output ID.
-- `keyword` (string, optional): Keyword to start the dialog.
-- `listeningItem` (string, optional): Item name to listen to.
+Sends a text to a given human language interpreter(s).
 
-**Returns:** `Promise<unknown>`.
+- `text` – The text to be interpreted.
+- `language` – The language of the text.
+- `IDs` – A list of interpreter IDs.
 
-```js
-await voice.startDialog("javasound:source:microphone", {
-  sttID:   "googlestt",
-  ttsID:   "googletts",
-  voiceID: "google:en-US:en-US-Wavenet-A"
-});
-```
+**Returns:** The response from the server.
 
-##### `stopDialog(sourceID)`
+#### `listenAndAnswer(sourceID, sttID, ttsID, voiceID, { hliIDs = null, sinkID = null, listeningItem = null, language = null } = {})`
 
-Stops dialog processing for an audio source.
+Executes a simple dialog sequence without keyword spotting for a given audio source.
 
-**Parameters:**
-- `sourceID` (string): The audio source ID.
+- `sourceID` – The ID of the audio source.
+- `sttID` – The ID of the speech-to-text system.
+- `ttsID` – The ID of the text-to-speech system.
+- `voiceID` – The ID of the voice.
+- `hliIDs` – A list of interpreter IDs (optional).
+- `sinkID` – The ID of the audio output (optional).
+- `listeningItem` – The name of the item to listen to (optional).
+- `language` – The language for the request (optional).
 
-**Returns:** `Promise<unknown>`.
+**Returns:** The response from the server.
 
-##### `listenAndAnswer(sourceID, sttID, ttsID, voiceID, { hliIDs, sinkID, listeningItem } = {})`
+#### `sayText(text, voiceID, sinkID, volume = "100")`
 
-Executes a single listen-and-answer dialog without keyword spotting. Optional parameters are passed as a destructured object.
+Speaks a given text with a given voice through the given audio sink.
 
-**Parameters:**
-- `sourceID` (string): The audio source ID.
-- `sttID` (string): The speech-to-text ID.
-- `ttsID` (string): The text-to-speech ID.
-- `voiceID` (string): The voice ID.
-- `hliIDs` (string, optional): Comma-separated interpreter IDs.
-- `sinkID` (string, optional): Audio output ID.
-- `listeningItem` (string, optional): Item name to listen to.
+- `text` – The text to be spoken.
+- `voiceID` – The ID of the voice.
+- `sinkID` – The ID of the audio output.
+- `volume` – The volume level (default: 100).
 
-**Returns:** `Promise<unknown>`.
+**Returns:** The response from the server.
 
-##### `sayText(text, voiceID, sinkID, volume = "100")`
+#### `getVoices(language = null)`
 
-Speaks text aloud.
+Get the list of all voices.
 
-**Parameters:**
-- `text` (string): The text to speak.
-- `voiceID` (string): The voice ID.
-- `sinkID` (string): The audio output ID.
-- `volume` (string, optional): Volume level (default `"100"`).
-
-**Returns:** `Promise<unknown>`.
-
-```js
-await voice.sayText("Hello from openHAB!", "voicerss:en-us", "javasound:sink:default");
-```
-
-Also available as `AsyncVoice`.
+**Returns:** A list of voices if successful.
 
 ---
 
-## Node.js vs. Browser JS — Key Differences
 
-| Topic | nodejs-openhab-rest-client | js-openhab-rest-client |
-|---|---|---|
-| Install | `npm install nodejs-openhab-rest-client` | `<script src="...openhab.js">` |
-| Import (ESM) | `import { Items } from "nodejs-openhab-rest-client"` | `import { Items } from "./openhab.js"` |
-| Import (CJS) | `const { Items } = require("nodejs-openhab-rest-client")` | not applicable |
-| TypeScript | ✅ bundled `index.d.ts` | ❌ not included |
-| Distribution | `dist/esm/`, `dist/cjs/`, `dist/types/` | single `openhab.js` + `openhab.min.js` |
-| CDN | ❌ | jsDelivr, GitHack |
-| Global namespace | ❌ | `window.openHAB` |
-| SSE stream | `response.body.getReader()` with `buffer` | `response.body.getReader()` |
-| Min. runtime | Node.js ≥ 18 | any modern browser |
-| Auth (`getToken`) | no `useCookie` parameter | has `useCookie` parameter |
-| `getItemPersistenceData` | options as destructured object `{ startTime, ... }` | positional parameters |
+## Upgrading from 1.x
 
----
+Version 2 behaves like the Python library. Code written for 1.x needs these changes:
+
+- Methods no longer throw for HTTP errors – they return `{ error: "…" }`. Replace `try/catch` around REST calls by a check of `result.error`.
+- Empty answers are `{ message: "OK" }` (or `"Accepted."`, `"Subscription created."`, …) instead of `{ status: 200 }`.
+- Create calls (`createRule`, `createThing`, `addUIComponent`, …) return a result object instead of a raw `Response`.
+- Event methods return the stream or `{ error }`; read it with `iterSSEEvents` instead of a hand-written reader.
+- `getItemPersistenceData` no longer sends `page=1&pagelength=50` by default.
+
+## Development
+
+```sh
+npm run generate   # src/index.js and README.md from python-openhab-rest-client (needs Python 3)
+npm run build      # dist/esm, dist/cjs, dist/types
+npm test           # unit tests; integration tests run when OPENHAB_URL and OPENHAB_TOKEN are set
+```
+
+`npm run generate` uses the installed Python package (`pip install python-openhab-rest-client`) or a path: `bash tools/generate.sh path/to/python-openhab-rest-client/openhab`.
 
 ## Contributing
 
-Contributions are welcome! Please create an issue or pull request to suggest changes.
-
-### How to contribute:
-1. Fork the repository.
-2. Create a new branch:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-3. Commit your changes:
-   ```bash
-   git commit -m "Add your feature description"
-   ```
-4. Push to the branch:
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-5. Open a pull request.
-
-Please ensure your code follows the existing style and includes relevant documentation.
+Contributions are welcome! Please create an issue or pull request. Changes to the REST classes belong into [python-openhab-rest-client](https://github.com/Michdo93/python-openhab-rest-client) – all three libraries are generated from the same source.
 
 ## License
 

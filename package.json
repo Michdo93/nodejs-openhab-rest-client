@@ -1,7 +1,7 @@
 {
   "name": "nodejs-openhab-rest-client",
-  "version": "1.0.0",
-  "description": "JavaScript client for the openHAB REST API – same interface as python-openhab-rest-client",
+  "version": "2.0.0",
+  "description": "Node.js client for the openHAB REST API – same classes and methods as python-openhab-rest-client",
   "author": "Michael Christian Dörflinger <michaeldoerflinger93@gmail.com>",
   "license": "MIT",
   "homepage": "https://github.com/Michdo93/nodejs-openhab-rest-client",
@@ -16,14 +16,22 @@
     "rest",
     "api",
     "client",
-    "home-automation"
+    "home-automation",
+    "sse",
+    "server-sent-events"
   ],
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
   "exports": {
     ".": {
-      "import": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.js"
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
     }
   },
   "types": "./dist/types/index.d.ts",
@@ -36,12 +44,11 @@
     "node": ">=18.0.0"
   },
   "scripts": {
+    "generate": "bash tools/generate.sh",
     "build": "node build.js",
-    "test": "node test/test.js",
-    "test:sse": "node test/test-sse.js",
-    "test:cjs": "node test/test-cjs.cjs",
+    "test": "node --test test/*.test.mjs test/*.test.cjs",
     "prepublishOnly": "npm run build"
   },
-  "devDependencies": {},
-  "type": "module"
+  "type": "module",
+  "bugs": "https://github.com/Michdo93/nodejs-openhab-rest-client/issues"
 }
